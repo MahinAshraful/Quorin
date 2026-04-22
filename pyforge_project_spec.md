@@ -434,3 +434,4 @@ To be absolutely clear about what Pyforge is and isn't:
 **Pyforge is not:** A distributed system, a cloud service, a streaming platform, a replacement for Feast in large organizations, or a database.
 
 The target user is an ML engineer building a prediction service on one server who needs features served faster than Redis alone allows, without standing up a large infrastructure project.
+
