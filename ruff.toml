@@ -23,8 +23,12 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"tests/**" = ["PLR2004", "S101", "PLR0915"]
-"benchmarks/**" = ["PLR2004"]
+# PLC2701: tests intentionally access private symbols (e.g. _hash_name).
+# RUF012: FeatureSchema subclasses inherit ClassVar from the base; tests
+#         define many local ones and re-annotating every one is noise.
+# PLR2004 / S101 / PLR0915: common in concise test code.
+"tests/**" = ["PLR2004", "S101", "PLR0915", "PLC2701", "RUF012"]
+"benchmarks/**" = ["PLR2004", "PLC2701", "RUF012"]
 
 [format]
 quote-style = "double"

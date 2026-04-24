@@ -4,5 +4,9 @@
 # a quiet runner cannot silently tighten the bar. Keep in sync with the numbers
 # published in the README.
 #
-# Populated as steps land; Step 0 has no real benchmark yet.
-benchmarks: {}
+# Populated as steps land.
+benchmarks:
+  # Step 1 — schema compile. Not on the hot path but used during process
+  # startup; <1 ms keeps the test suite snappy.
+  compile_schema_200_fields:
+    p99_seconds: 0.001
