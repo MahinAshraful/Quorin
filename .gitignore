@@ -64,3 +64,9 @@ progress/
 
 # Claude Code per-user settings — not shared.
 .claude/
+
+# Personal dev-environment scripts — not shared.
+dev-up.sh
+dev-*.sh
+dev-*.cmd
+dev-*.bat
