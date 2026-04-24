@@ -61,3 +61,6 @@ docker/redis_data/
 
 # Personal build progress journal — not shared.
 progress/
+
+# Claude Code per-user settings — not shared.
+.claude/

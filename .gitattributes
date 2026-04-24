@@ -1,0 +1,11 @@
+# Normalize line endings: LF in the repo, auto-convert on checkout per-platform
+# if needed. Silences Git Bash's "LF will be replaced by CRLF" warnings and
+# guarantees Linux (CI, WSL2) and Windows devs see identical bytes.
+* text=auto eol=lf
+
+# Binary files — never touch.
+*.svg   binary
+*.png   binary
+*.parquet binary
+*.nbi   binary
+*.nbc   binary
