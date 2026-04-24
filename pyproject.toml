@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyforge"
+version = "0.1.0"
+description = "Low-latency ML feature serving via shared memory."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Mahin Ashraful" }]
+dependencies = [
+  "numpy>=1.26,<2.0",
+  "numba>=0.59,<0.61",
+  "pyarrow>=14.0,<15.0",
+  "redis>=5.0,<6.0",
+  "pydantic>=2.5,<3.0",
+  "psutil>=5.9",
+  "structlog>=24.0",
+  "prometheus-client>=0.19",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-benchmark>=4.0",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
+  "hypothesis>=6.100",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "py-spy>=0.3",
+  "pre-commit>=3.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyforge"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "integration: requires Redis (docker-compose up -d)",
+  "chaos: SIGKILL / crash-safety scenarios",
+  "property: Hypothesis-driven",
+  "slow: long-running",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["pyforge"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+]

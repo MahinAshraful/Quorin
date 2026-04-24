@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: pyforge-redis
+    command: >-
+      redis-server
+      --appendonly yes
+      --appendfsync always
+      --maxmemory-policy noeviction
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
+    # PLAN CORRECTION: Docker defaults /dev/shm to 64 MB inside the container.
+    # Irrelevant for Redis but carried so the pattern is already in place when
+    # the pyforge test runner gets containerized (Step 16-ish).
+    shm_size: 2gb
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+
+volumes:
+  redis_data:

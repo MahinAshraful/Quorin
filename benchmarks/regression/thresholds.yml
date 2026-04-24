@@ -1,0 +1,8 @@
+# Per-benchmark regression thresholds consumed by .github/workflows/benchmark.yml.
+#
+# Each entry is absolute (seconds, p99 unless noted) so that a lucky fast run on
+# a quiet runner cannot silently tighten the bar. Keep in sync with the numbers
+# published in the README.
+#
+# Populated as steps land; Step 0 has no real benchmark yet.
+benchmarks: {}

@@ -1,0 +1,31 @@
+line-length = 100
+target-version = "py312"
+extend-exclude = ["benchmarks/results", ".venv", "build", "dist"]
+
+[lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "B",    # flake8-bugbear
+  "UP",   # pyupgrade
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific
+  "N",    # pep8-naming
+  "PL",   # pylint
+  "PTH",  # flake8-use-pathlib
+]
+ignore = [
+  "E501",    # line length handled by formatter
+  "PLR0913", # too many arguments
+  "PLR2004", # magic values — common in numeric code
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["PLR2004", "S101", "PLR0915"]
+"benchmarks/**" = ["PLR2004"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(uv --version)",
+      "Bash(docker --version)",
+      "Bash(git --version)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)",
+      "Bash(docker compose *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}

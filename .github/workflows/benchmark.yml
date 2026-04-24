@@ -1,0 +1,58 @@
+name: benchmark
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 1s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need history for --benchmark-compare
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --all-extras
+
+      - name: Run benchmarks
+        env:
+          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          uv run pytest benchmarks/ \
+            --benchmark-autosave \
+            --benchmark-storage=benchmarks/results
+
+      - name: Check regression thresholds
+        run: |
+          uv run python -c "import yaml, pathlib; \
+            t = yaml.safe_load(pathlib.Path('benchmarks/regression/thresholds.yml').read_text()); \
+            print('thresholds loaded:', t)"
+        # TODO (Step 16): replace the print-only check with a real comparison
+        # against benchmarks/results/ using pytest-benchmark's --benchmark-compare-fail.
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results/
