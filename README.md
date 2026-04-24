@@ -54,3 +54,4 @@ and are visible in tests:
 - `pyforge_gc_pause_seconds{generation}` — GC impact (Step 7)
 - `pyforge_wal_lag_seconds` — producer→consumer lag (Step 10)
 - `pyforge_pool_miss_total{schema}` — buffer-pool exhaustions (Step 6)
+
