@@ -1,1 +1,261 @@
-"""POSIX shared-memory wrapper and segment registry. Implemented in Step 2."""
+"""Shared-memory segment lifecycle: create, open, close, refcount.
+
+A :class:`Segment` is a typed wrapper around a POSIX shm region containing:
+
+::
+
+    bytes  0..3  : magic = b"PYFG"
+    bytes  4..7  : schema version (uint32 LE)
+    bytes  8..11 : CRC32 of the compiled offset table (uint32 LE)
+    bytes 12..15 : zero padding (reserved)
+    bytes 16..   : data — filled in by Step 3+
+
+The :class:`SegmentRegistry` maintains Redis bookkeeping so that multiple
+processes can share segments without leaking them. Refcounts are
+**per-open**, not per-read — one ``INCR`` at process start, one ``DECR`` at
+process end. The hot read path never touches Redis.
+
+Linux/WSL2 only. Importing this module on native Windows fails because
+``posix_ipc`` has no Windows wheel.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import re
+import struct
+import uuid
+from dataclasses import dataclass
+from typing import Final, cast
+
+import redis
+
+from pyforge._internal import posix_shm
+from pyforge._internal.crc import crc32_of_bytes
+from pyforge.schema import FeatureSchema, compile_schema, total_segment_size
+
+# ---------------------------------------------------------------------------
+# Header format — 16 bytes, fixed forever. Every Pyforge segment starts with
+# these bytes; mismatches refuse to open rather than read garbage.
+# ---------------------------------------------------------------------------
+
+MAGIC: Final[bytes] = b"PYFG"
+
+# little-endian: 4-byte magic, uint32 version, uint32 crc32, 4 bytes zero pad
+HEADER_FMT: Final[str] = "<4sII4x"
+HEADER_LEN: Final[int] = 16
+
+assert struct.calcsize(HEADER_FMT) == HEADER_LEN, "header format must be 16 bytes"
+
+
+# ---------------------------------------------------------------------------
+# Errors.
+# ---------------------------------------------------------------------------
+
+
+class SchemaCRCMismatchError(RuntimeError):
+    """Raised when an opened segment's stored CRC32 (or magic, or version)
+    doesn't match what the locally-loaded schema would produce. Indicates two
+    software versions disagree about the layout — refuse to read further."""
+
+
+class SegmentNotFoundError(RuntimeError):
+    """No segment is currently registered for this schema in Redis."""
+
+
+# ---------------------------------------------------------------------------
+# Redis key helpers — single source of truth for namespacing. Step 14 and 15
+# read these same keys; do not change without updating both.
+# ---------------------------------------------------------------------------
+
+
+def _safe_class_name(name: str) -> str:
+    """Sanitize a Python class name for safe use in a POSIX shm path."""
+    return re.sub(r"[^A-Za-z0-9_]", "_", name)
+
+
+def _segment_name(schema: type[FeatureSchema]) -> str:
+    return f"pyforge_{_safe_class_name(schema.__name__)}_v{schema.version}_{uuid.uuid4().hex[:8]}"
+
+
+def _key_current(schema: type[FeatureSchema]) -> str:
+    return f"pyforge:schema:{_safe_class_name(schema.__name__)}:current"
+
+
+def _key_refcount(segment_name: str) -> str:
+    return f"pyforge:refcount:{segment_name}"
+
+
+def _key_pid_segments(pid: int) -> str:
+    return f"pyforge:pid_segments:{pid}"
+
+
+KEY_CLEANUP_QUEUE: Final[str] = "pyforge:cleanup_queue"
+
+
+# ---------------------------------------------------------------------------
+# Segment + registry.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Segment:
+    """A live, mapped Pyforge segment."""
+
+    name: str
+    schema: type[FeatureSchema]
+    handle: posix_shm.SegmentHandle
+
+    @property
+    def mmap_view(self) -> memoryview:
+        """Direct memoryview of the mmap'd region (zero-copy).
+
+        Step 4+ slice into this for assembly. The view spans the entire
+        segment including the 16-byte header — callers that want only the
+        data area should slice from ``HEADER_LEN`` onward.
+        """
+        return self.handle.buf
+
+
+# Atomic close: DECR refcount, SADD-to-cleanup-queue if it hit zero, SREM
+# from this process's pid_segments set. One Redis round trip, atomic.
+_CLOSE_LUA: Final[str] = """
+local n = redis.call('DECR', KEYS[1])
+if tonumber(n) <= 0 then
+    redis.call('SADD', KEYS[3], ARGV[1])
+end
+redis.call('SREM', KEYS[2], ARGV[1])
+return n
+"""
+
+
+class SegmentRegistry:
+    """Cross-process registry for Pyforge shm segments.
+
+    A single instance per process is enough; multiple are harmless. The
+    registry holds no in-memory state about who-has-what — Redis is the
+    source of truth.
+    """
+
+    def __init__(self, redis_client: redis.Redis) -> None:
+        self._redis = redis_client
+        self._close_script = redis_client.register_script(_CLOSE_LUA)
+
+    # ----- create -----------------------------------------------------------
+
+    def create(self, schema: type[FeatureSchema]) -> Segment:
+        """Allocate a new segment, write the header, register as the schema's
+        current segment in Redis with refcount=1.
+
+        On any failure after :func:`posix_shm.create` succeeds, the segment is
+        unlinked so ``/dev/shm`` does not leak.
+        """
+        name = _segment_name(schema)
+        size = total_segment_size(schema)
+        handle = posix_shm.create(name, size)
+        try:
+            offset_table = compile_schema(schema)
+            crc = crc32_of_bytes(offset_table.tobytes())
+            header = struct.pack(HEADER_FMT, MAGIC, int(schema.version), crc)
+            handle.buf[:HEADER_LEN] = header
+
+            pid = os.getpid()
+            with self._redis.pipeline(transaction=True) as p:
+                p.set(_key_current(schema), name)
+                p.set(_key_refcount(name), 1)
+                p.sadd(_key_pid_segments(pid), name)
+                p.execute()
+        except BaseException:
+            # Anything went wrong — release the mapping AND unlink so we
+            # don't leak in /dev/shm.
+            with contextlib.suppress(Exception):
+                posix_shm.close(handle)
+            with contextlib.suppress(Exception):
+                posix_shm.unlink(name)
+            raise
+
+        return Segment(name=name, schema=schema, handle=handle)
+
+    # ----- open -------------------------------------------------------------
+
+    def open_current(self, schema: type[FeatureSchema]) -> Segment:
+        """Open the schema's currently-active segment.
+
+        Verifies header magic, schema version, and CRC32 against the local
+        schema. INCRs refcount and adds the segment to this PID's held set.
+
+        Raises:
+            SegmentNotFoundError: when no current segment is registered.
+            SchemaCRCMismatchError: when stored magic/version/CRC differ from local.
+        """
+        # Cast tells mypy this is a sync-redis call; the stub union with
+        # Awaitable is for the async-client variant we never use.
+        raw = cast("bytes | None", self._redis.get(_key_current(schema)))
+        if raw is None:
+            raise SegmentNotFoundError(
+                f"no current segment registered for schema {schema.__name__}"
+            )
+        name: str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        handle = posix_shm.open_existing(name)
+        try:
+            self._verify_header(handle, schema)
+            pid = os.getpid()
+            with self._redis.pipeline(transaction=True) as p:
+                p.incr(_key_refcount(name))
+                p.sadd(_key_pid_segments(pid), name)
+                p.execute()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                posix_shm.close(handle)
+            raise
+
+        return Segment(name=name, schema=schema, handle=handle)
+
+    # ----- close ------------------------------------------------------------
+
+    def close(self, segment: Segment) -> None:
+        """Release this process's mapping; DECR refcount.
+
+        If the refcount drops to zero, the segment name is added to the
+        ``pyforge:cleanup_queue`` set for the watchdog (Step 14) to unlink.
+        We never unlink directly here — that would violate the
+        creator-only-unlinks invariant.
+        """
+        name = segment.name
+        pid = os.getpid()
+        try:
+            self._close_script(
+                keys=[
+                    _key_refcount(name),
+                    _key_pid_segments(pid),
+                    KEY_CLEANUP_QUEUE,
+                ],
+                args=[name],
+            )
+        finally:
+            posix_shm.close(segment.handle)
+
+    # ----- internals --------------------------------------------------------
+
+    @staticmethod
+    def _verify_header(
+        handle: posix_shm.SegmentHandle,
+        schema: type[FeatureSchema],
+    ) -> None:
+        magic, version, crc = struct.unpack(HEADER_FMT, bytes(handle.buf[:HEADER_LEN]))
+        if magic != MAGIC:
+            raise SchemaCRCMismatchError(
+                f"segment {handle.name!r}: bad magic {magic!r} (expected {MAGIC!r})"
+            )
+        if version != schema.version:
+            raise SchemaCRCMismatchError(
+                f"segment {handle.name!r}: stored version {version} "
+                f"!= schema {schema.__name__} version {schema.version}"
+            )
+        expected_crc = crc32_of_bytes(compile_schema(schema).tobytes())
+        if crc != expected_crc:
+            raise SchemaCRCMismatchError(
+                f"segment {handle.name!r}: stored CRC32 0x{crc:08x} "
+                f"!= local schema CRC32 0x{expected_crc:08x}"
+            )

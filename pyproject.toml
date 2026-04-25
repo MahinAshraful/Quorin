@@ -19,6 +19,10 @@ dependencies = [
   "psutil>=5.9",
   "structlog>=24.0",
   "prometheus-client>=0.19",
+  # POSIX IPC — used by pyforge._internal.posix_shm to bypass CPython's
+  # multiprocessing.shared_memory resource_tracker bug. Linux/macOS only;
+  # native Windows is not a supported platform per the spec.
+  "posix-ipc>=1.1,<2.0; sys_platform != 'win32'",
 ]
 
 [project.optional-dependencies]

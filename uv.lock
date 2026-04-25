@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -369,6 +369,30 @@ wheels = [
 ]
 
 [[package]]
+name = "posix-ipc"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/59/56be08bcd98bcb8bd2ec3de7dea4a8da3bde63b17974896ed2b91c9a4fb7/posix_ipc-1.3.2.tar.gz", hash = "sha256:6923232111329954a8349f7d99f212b6e96b5206e77fbd39aaf1b3cb4a5e9260", size = 99370, upload-time = "2025-10-23T02:14:37.234Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/a7/130bae9212edb8be1429ac29e96ffa3208efb96741dc9815a5cd02f37757/posix_ipc-1.3.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:ad1388205d8221fc2d070bf334d6415768db78cf585d247031ec93f980942538", size = 11760, upload-time = "2025-10-23T02:13:41.612Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/c4/0bd9a38f95bd47995c696b2778b83c3d6efea3d90be521bc58656ff5a3f0/posix_ipc-1.3.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:93dd4efd8f44c2f2fbe6d3103d333eeec9ec31596ccd3ab3129ff94d930e4cd9", size = 12065, upload-time = "2025-10-23T02:13:42.663Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/4f/6f39aed35c746b39fbb55c1fded27c0a5b18bc8c905a25c9970bfd5c5ba7/posix_ipc-1.3.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5829f8f0d028a1673439a5e1ce121abbae9ef88a5fb5fdd0997998603b08f778", size = 51304, upload-time = "2025-10-23T02:13:43.372Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/6d/d123521c2a36920fcf855793aa1d8dbcc5aab87070f675b4445cccd0548d/posix_ipc-1.3.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:7f4b173c80d3fbec6d8396c0dbcc8c211592bf0f79a4395e2783968b50176ced", size = 47612, upload-time = "2025-10-23T02:13:44.297Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/ae/0f80e178d66f055bb90b2599c7747166c2376419100985970d6bdda3afd6/posix_ipc-1.3.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8a4b05d7c1e8e4d9b09e5887bdd2c31cf031ff79e7a01786ef758bdd6cbc8237", size = 52321, upload-time = "2025-10-23T02:13:45.624Z" },
+    { url = "https://files.pythonhosted.org/packages/71/1d/9490a906c0467bf103d3e61c67194a47ef9d563ba4d4317fe89e3ee43f7c/posix_ipc-1.3.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:c745414f8f5da421020570156e4f77c76a31c75852330cde5645ce836804b59c", size = 50373, upload-time = "2025-10-23T02:13:46.441Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/c7/2b87a9397b69a3013a3c7531a3133c5385bfd428c8d317db14c8e5e7772f/posix_ipc-1.3.2-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:7586d047b650814761e3fee00fcb5b325bce203d28b9703d8d11195f57360818", size = 47438, upload-time = "2025-10-23T02:13:47.266Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/4b/18e5716ae19c6e8d0fb3b7a81031ff3da2e4e190b584653f4c99bbded4e0/posix_ipc-1.3.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:bc52488c7068ee3a644a0a365961d93b4f2c40842c3fde90d573960c2ad6a868", size = 50630, upload-time = "2025-10-23T02:13:48.097Z" },
+    { url = "https://files.pythonhosted.org/packages/67/0a/23656d8f70e6afeb2798dd2ff63d8525e07e28f29a4785081eb6069d5646/posix_ipc-1.3.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:cfbf8ab144a82ad2d6fad8f53e37a82771da684fd01395032fd73b5272db2304", size = 11743, upload-time = "2025-10-23T02:13:48.853Z" },
+    { url = "https://files.pythonhosted.org/packages/37/92/933381f1bb3085a2d828bfae2c93745302167cc75c9b4c10830e0df33a20/posix_ipc-1.3.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:5dbd27314bc10e01596a6e000c9ceeac4f06b710099a046d81e1734b68c49bc9", size = 12074, upload-time = "2025-10-23T02:13:49.908Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/5e/4aaab2df9e82c81bd1f5bc2c35eb81355ceb00f7ff7322ddd891bb0fc11c/posix_ipc-1.3.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6485ef684c327125dc3f9db29c396554fddf2f37e495ef1409d6b5f8ce9cfb43", size = 51340, upload-time = "2025-10-23T02:13:50.646Z" },
+    { url = "https://files.pythonhosted.org/packages/16/61/a81d8d8b667763924a8cd7466b23056ce94b9d734a535d6b53f3272c2fdb/posix_ipc-1.3.2-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:bf7c3da68fd12c8681b9580b6c75f812f3c3b85a649a0eb6495b9a8125119ab0", size = 47672, upload-time = "2025-10-23T02:13:51.477Z" },
+    { url = "https://files.pythonhosted.org/packages/36/46/890d097c1469a65feb88c58b1d66b3c5369bf90a17ba98ae8bfb01cc0c0a/posix_ipc-1.3.2-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fe311eb00c27d7f34d34cc7bd6f5e60d65b2ad7ed35692519eae9f4c5b233dc2", size = 52335, upload-time = "2025-10-23T02:13:52.262Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/23/0f23377ef004c02acbaae8c2fb14fafdc3f55a1c49551c4e06d23b53e1d9/posix_ipc-1.3.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:1485c456083ba56ecd6eab873d29f5252d62c82125bf7670fc9675e53b675bf7", size = 50459, upload-time = "2025-10-23T02:13:53.437Z" },
+    { url = "https://files.pythonhosted.org/packages/02/0f/bd10a337af2bf9bdd0f7fc265ed52362ddf36e5ee4c1a080ec06b1621396/posix_ipc-1.3.2-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:ab1b9c57a734fd44a156651e4064e56d6a1bc6ae9182a088647a758a28814ba6", size = 47456, upload-time = "2025-10-23T02:13:54.5Z" },
+    { url = "https://files.pythonhosted.org/packages/78/0c/3b356d67729c4b37bf985dfa6d9e3697e8af27b9b4147b671245e4399efc/posix_ipc-1.3.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:e1e68190a49df17435e73f0be304df3ff513ef6ffdd61121172a69aff7db5fa9", size = 50673, upload-time = "2025-10-23T02:13:55.656Z" },
+]
+
+[[package]]
 name = "pre-commit"
 version = "4.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -560,6 +584,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numba" },
     { name = "numpy" },
+    { name = "posix-ipc", marker = "sys_platform != 'win32'" },
     { name = "prometheus-client" },
     { name = "psutil" },
     { name = "pyarrow" },
@@ -587,6 +612,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "numba", specifier = ">=0.59,<0.61" },
     { name = "numpy", specifier = ">=1.26,<2.0" },
+    { name = "posix-ipc", marker = "sys_platform != 'win32'", specifier = ">=1.1,<2.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
     { name = "prometheus-client", specifier = ">=0.19" },
     { name = "psutil", specifier = ">=5.9" },
