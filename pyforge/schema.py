@@ -78,6 +78,21 @@ _DTYPE_BYTE_SIZE: Final[dict[DType, int]] = {
 }
 
 
+DTYPE_TO_NUMPY: Final[dict[DType, np.dtype[Any]]] = {
+    DType.FLOAT32: np.dtype(np.float32),
+    DType.FLOAT64: np.dtype(np.float64),
+    DType.INT32: np.dtype(np.int32),
+    DType.INT64: np.dtype(np.int64),
+    DType.UINT8: np.dtype(np.uint8),
+}
+"""DType IntEnum -> NumPy dtype object. ``pyforge.serving.assemble`` uses this
+to build a typed ``np.frombuffer`` view over each field's bytes before slice-
+assigning into the float32 output. Public because it crosses module
+boundaries; ``_DTYPE_BYTE_SIZE`` stays private because it's used only inside
+``FeatureField.byte_count``.
+"""
+
+
 # ---------------------------------------------------------------------------
 # FeatureField — one typed field in a schema.
 # ---------------------------------------------------------------------------
@@ -211,6 +226,27 @@ def _align_up(value: int, alignment: int) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
 
+def _field_byte_offsets(
+    field_list: list[FeatureField], *, base: int = HEADER_SIZE
+) -> list[int]:
+    """Walk ``field_list`` in declaration order, returning each field's start
+    byte offset.
+
+    Every field is rounded up to :data:`CACHE_LINE_SIZE` before its bytes are
+    written, so no two fields share a cache line. ``base`` is the starting
+    cursor — :data:`HEADER_SIZE` for segment-absolute offsets used by
+    :func:`compile_schema`, or 0 for row-relative offsets used by callers like
+    :func:`compute_assembly_table` that operate within a single entity row.
+    """
+    cursor = base
+    offsets: list[int] = []
+    for f in field_list:
+        cursor = _align_up(cursor, CACHE_LINE_SIZE)
+        offsets.append(cursor)
+        cursor += f.byte_count
+    return offsets
+
+
 # ---------------------------------------------------------------------------
 # Public functions: compile_schema + total_segment_size.
 # ---------------------------------------------------------------------------
@@ -233,13 +269,7 @@ def compile_schema(schema: type[FeatureSchema]) -> np.ndarray[Any, np.dtype[np.v
     n = len(field_list)
     table = np.zeros(n, dtype=OFFSET_TABLE_DTYPE)
 
-    # First pass: byte offsets in declaration order.
-    cursor = HEADER_SIZE
-    offsets: list[int] = []
-    for f in field_list:
-        cursor = _align_up(cursor, CACHE_LINE_SIZE)
-        offsets.append(cursor)
-        cursor += f.byte_count
+    offsets = _field_byte_offsets(field_list, base=HEADER_SIZE)
 
     # Populate the table.
     for i, f in enumerate(field_list):
@@ -320,3 +350,44 @@ def row_size(schema: type[FeatureSchema]) -> int:
         return 0
     end = int((table["byte_offset"] + table["byte_count"]).max())
     return _align_up(end, CACHE_LINE_SIZE)
+
+
+def compute_assembly_table(
+    schema: type[FeatureSchema],
+) -> np.ndarray[Any, np.dtype[np.void]]:
+    """Like :func:`compute_row_offset_table`, but rows are in DECLARATION ORDER.
+
+    The hash-sorted offset table powers ``searchsorted``-based lookups; this
+    one drives output-vector assembly. Each row's ``byte_offset`` is row-
+    relative (matches :func:`compute_row_offset_table`) so a reader indexes it
+    as ``buf[row_offset + byte_offset : row_offset + byte_offset + byte_count]``.
+
+    Returned dtype is :data:`OFFSET_TABLE_DTYPE` so Step 5's Numba kernel can
+    iterate this and the lookup table with the same kernel — only the order
+    differs. See ADR-003 for why output ordering is declaration, not hash.
+    """
+    field_list = schema.fields
+    n = len(field_list)
+    table = np.zeros(n, dtype=OFFSET_TABLE_DTYPE)
+
+    # Row-relative offsets: the first field sits at byte 0 within a row.
+    offsets = _field_byte_offsets(field_list, base=0)
+
+    for i, f in enumerate(field_list):
+        table[i] = (
+            _hash_name(f.name),
+            offsets[i],
+            int(f.dtype),
+            f.element_count,
+            f.byte_count,
+        )
+
+    # Deliberately NOT sorted — declaration order is the contract.
+    return table
+
+
+def total_element_count(schema: type[FeatureSchema]) -> int:
+    """Sum of ``element_count`` across all fields. Length of the float32 vector
+    returned by :func:`pyforge.serving.assemble`.
+    """
+    return sum(f.element_count for f in schema.fields)

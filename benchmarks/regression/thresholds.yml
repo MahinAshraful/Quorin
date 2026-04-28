@@ -10,3 +10,10 @@ benchmarks:
   # startup; <1 ms keeps the test suite snappy.
   compile_schema_200_fields:
     p99_seconds: 0.001
+  # Step 4 — pure-Python assemble oracle. Conservative ceilings (1.7-2x the
+  # spec's upper estimates) so noisy CI runs don't flake. Step 5's Numba
+  # kernel will tighten these substantially.
+  assemble_4_field_warm:
+    p99_seconds: 0.000050   # 50 us — spec target 10-30 us upper bound
+  assemble_200_field_warm:
+    p99_seconds: 0.001000   # 1 ms — spec target 100-500 us upper bound

@@ -49,8 +49,10 @@ from pyforge.schema import (
     CACHE_LINE_SIZE,
     PAGE_SIZE,
     FeatureSchema,
+    compute_assembly_table,
     compute_row_offset_table,
     row_size,
+    total_element_count,
 )
 
 if TYPE_CHECKING:
@@ -165,7 +167,17 @@ class SegmentLayout:
 
     total_size: int  # full segment size, page-aligned
 
-    row_offset_table: np.ndarray[Any, np.dtype[np.void]]  # 0-relative offsets
+    # Hash-sorted, row-relative offsets — lookup uses this (searchsorted).
+    row_offset_table: np.ndarray[Any, np.dtype[np.void]]
+
+    # Declaration-order, row-relative offsets — assembly uses this. Output
+    # vectors are emitted in declaration order so model.predict(vec) sees
+    # fields in the order the user declared them. See ADR-003.
+    assembly_table: np.ndarray[Any, np.dtype[np.void]]
+
+    # Length of the float32 vector returned by pyforge.serving.assemble.
+    # Sum of element_count across all fields.
+    total_element_count: int
 
 
 def compute_layout(
@@ -220,6 +232,8 @@ def compute_layout(
         feature_rows_bytes=feature_rows_bytes,
         total_size=total_size,
         row_offset_table=compute_row_offset_table(schema),
+        assembly_table=compute_assembly_table(schema),
+        total_element_count=total_element_count(schema),
     )
 
 

@@ -44,6 +44,10 @@ packages = ["pyforge"]
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# tests/_helpers.py holds pack_row and other shared test infrastructure used
+# across unit/property/integration. Adding "tests" to pythonpath lets test
+# files do ``from _helpers import pack_row`` without conftest fixture-wrapping.
+pythonpath = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
   "integration: requires Redis (docker-compose up -d)",
