@@ -7,8 +7,8 @@ A :class:`Segment` is a typed wrapper around a POSIX shm region containing:
     bytes  0..3  : magic = b"PYFG"
     bytes  4..7  : schema version (uint32 LE)
     bytes  8..11 : CRC32 of the compiled offset table (uint32 LE)
-    bytes 12..15 : zero padding (reserved)
-    bytes 16..   : data — filled in by Step 3+
+    bytes 12..15 : capacity (uint32 LE)         <- repurposed in Step 3
+    bytes 16..   : metadata + slot table + string pool + feature rows  (Step 3)
 
 The :class:`SegmentRegistry` maintains Redis bookkeeping so that multiple
 processes can share segments without leaking them. Refcounts are
@@ -33,17 +33,28 @@ import redis
 
 from pyforge._internal import posix_shm
 from pyforge._internal.crc import crc32_of_bytes
-from pyforge.schema import FeatureSchema, compile_schema, total_segment_size
+from pyforge.layout import (
+    DEFAULT_MAX_ID_BYTES,
+    SegmentLayout,
+    compute_layout,
+    compute_layout_from_segment,
+    initialize_segment_regions,
+)
+from pyforge.schema import FeatureSchema, compile_schema
 
 # ---------------------------------------------------------------------------
 # Header format — 16 bytes, fixed forever. Every Pyforge segment starts with
 # these bytes; mismatches refuse to open rather than read garbage.
+#
+# Step 3 repurposed the trailing 4-byte zero pad as ``capacity`` (uint32 LE).
+# The CRC32 still covers only the compiled offset table, so this change
+# doesn't alter the verification semantics.
 # ---------------------------------------------------------------------------
 
 MAGIC: Final[bytes] = b"PYFG"
 
-# little-endian: 4-byte magic, uint32 version, uint32 crc32, 4 bytes zero pad
-HEADER_FMT: Final[str] = "<4sII4x"
+# little-endian: magic[4] + version u32 + crc32 u32 + capacity u32
+HEADER_FMT: Final[str] = "<4sIII"
 HEADER_LEN: Final[int] = 16
 
 assert struct.calcsize(HEADER_FMT) == HEADER_LEN, "header format must be 16 bytes"
@@ -101,20 +112,20 @@ KEY_CLEANUP_QUEUE: Final[str] = "pyforge:cleanup_queue"
 
 @dataclass
 class Segment:
-    """A live, mapped Pyforge segment."""
+    """A live, mapped Pyforge segment.
+
+    The ``layout`` field is computed once at create/open time and cached so
+    that hot-path lookups don't recompute slot-table offsets per call.
+    """
 
     name: str
     schema: type[FeatureSchema]
     handle: posix_shm.SegmentHandle
+    layout: SegmentLayout
 
     @property
     def mmap_view(self) -> memoryview:
-        """Direct memoryview of the mmap'd region (zero-copy).
-
-        Step 4+ slice into this for assembly. The view spans the entire
-        segment including the 16-byte header — callers that want only the
-        data area should slice from ``HEADER_LEN`` onward.
-        """
+        """Direct memoryview of the mmap'd region (zero-copy)."""
         return self.handle.buf
 
 
@@ -144,21 +155,36 @@ class SegmentRegistry:
 
     # ----- create -----------------------------------------------------------
 
-    def create(self, schema: type[FeatureSchema]) -> Segment:
-        """Allocate a new segment, write the header, register as the schema's
-        current segment in Redis with refcount=1.
+    def create(
+        self,
+        schema: type[FeatureSchema],
+        *,
+        capacity: int,
+        max_id_bytes: int = DEFAULT_MAX_ID_BYTES,
+    ) -> Segment:
+        """Allocate a new multi-entity segment for ``schema`` with the given
+        ``capacity`` and per-ID byte budget.
 
         On any failure after :func:`posix_shm.create` succeeds, the segment is
-        unlinked so ``/dev/shm`` does not leak.
+        released and unlinked so ``/dev/shm`` does not leak.
         """
+        layout = compute_layout(schema, capacity=capacity, max_id_bytes=max_id_bytes)
         name = _segment_name(schema)
-        size = total_segment_size(schema)
-        handle = posix_shm.create(name, size)
+        handle = posix_shm.create(name, layout.total_size)
         try:
             offset_table = compile_schema(schema)
             crc = crc32_of_bytes(offset_table.tobytes())
-            header = struct.pack(HEADER_FMT, MAGIC, int(schema.version), crc)
+            header = struct.pack(
+                HEADER_FMT,
+                MAGIC,
+                int(schema.version),
+                crc,
+                capacity,
+            )
             handle.buf[:HEADER_LEN] = header
+
+            # Step 3 metadata + string-pool region header.
+            initialize_segment_regions(handle.buf, layout)
 
             pid = os.getpid()
             with self._redis.pipeline(transaction=True) as p:
@@ -167,15 +193,13 @@ class SegmentRegistry:
                 p.sadd(_key_pid_segments(pid), name)
                 p.execute()
         except BaseException:
-            # Anything went wrong — release the mapping AND unlink so we
-            # don't leak in /dev/shm.
             with contextlib.suppress(Exception):
                 posix_shm.close(handle)
             with contextlib.suppress(Exception):
                 posix_shm.unlink(name)
             raise
 
-        return Segment(name=name, schema=schema, handle=handle)
+        return Segment(name=name, schema=schema, handle=handle, layout=layout)
 
     # ----- open -------------------------------------------------------------
 
@@ -183,14 +207,14 @@ class SegmentRegistry:
         """Open the schema's currently-active segment.
 
         Verifies header magic, schema version, and CRC32 against the local
-        schema. INCRs refcount and adds the segment to this PID's held set.
+        schema; reads ``capacity`` and ``max_id_bytes`` out of the segment to
+        derive a fresh :class:`SegmentLayout`. INCRs refcount and adds the
+        segment to this PID's held set.
 
         Raises:
             SegmentNotFoundError: when no current segment is registered.
             SchemaCRCMismatchError: when stored magic/version/CRC differ from local.
         """
-        # Cast tells mypy this is a sync-redis call; the stub union with
-        # Awaitable is for the async-client variant we never use.
         raw = cast("bytes | None", self._redis.get(_key_current(schema)))
         if raw is None:
             raise SegmentNotFoundError(
@@ -200,6 +224,8 @@ class SegmentRegistry:
         handle = posix_shm.open_existing(name)
         try:
             self._verify_header(handle, schema)
+            layout = compute_layout_from_segment(handle.buf, schema)
+
             pid = os.getpid()
             with self._redis.pipeline(transaction=True) as p:
                 p.incr(_key_refcount(name))
@@ -210,7 +236,7 @@ class SegmentRegistry:
                 posix_shm.close(handle)
             raise
 
-        return Segment(name=name, schema=schema, handle=handle)
+        return Segment(name=name, schema=schema, handle=handle, layout=layout)
 
     # ----- close ------------------------------------------------------------
 
@@ -243,7 +269,7 @@ class SegmentRegistry:
         handle: posix_shm.SegmentHandle,
         schema: type[FeatureSchema],
     ) -> None:
-        magic, version, crc = struct.unpack(HEADER_FMT, bytes(handle.buf[:HEADER_LEN]))
+        magic, version, crc, _capacity = struct.unpack(HEADER_FMT, bytes(handle.buf[:HEADER_LEN]))
         if magic != MAGIC:
             raise SchemaCRCMismatchError(
                 f"segment {handle.name!r}: bad magic {magic!r} (expected {MAGIC!r})"

@@ -43,7 +43,7 @@ def _get_int(redis_client, key: str) -> int:
 
 def test_full_create_open_close_cycle_refcount_transitions(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_Schema)
+    seg = reg.create(_Schema, capacity=32)
     name = seg.name
     assert _get_int(redis_client, _key_refcount(name)) == 1
 
@@ -65,7 +65,7 @@ def test_full_create_open_close_cycle_refcount_transitions(redis_client) -> None
 
 def test_three_concurrent_opens_give_refcount_four(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_Schema)
+    seg = reg.create(_Schema, capacity=32)
     name = seg.name
     opens = [reg.open_current(_Schema) for _ in range(3)]
     try:
@@ -83,7 +83,7 @@ def test_pid_segments_set_tracks_single_open_lifecycle(redis_client) -> None:
     assert redis_client.scard(pid_key) == 0
 
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_Schema)
+    seg = reg.create(_Schema, capacity=32)
     members = {m.decode() if isinstance(m, bytes) else m for m in redis_client.smembers(pid_key)}
     assert seg.name in members
 
@@ -94,7 +94,7 @@ def test_pid_segments_set_tracks_single_open_lifecycle(redis_client) -> None:
 
 def test_schema_current_key_points_at_created_segment(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_Schema)
+    seg = reg.create(_Schema, capacity=32)
     try:
         current = redis_client.get(_key_current(_Schema))
         assert current is not None

@@ -267,14 +267,56 @@ def compile_schema(schema: type[FeatureSchema]) -> np.ndarray[Any, np.dtype[np.v
 
 
 def total_segment_size(schema: type[FeatureSchema]) -> int:
-    """Total bytes a segment needs for this schema, rounded up to PAGE_SIZE.
+    """Total bytes a *single-entity* segment needs for this schema.
 
     Computed as ``HEADER_SIZE + sum(aligned field slots)``, rounded up to a
-    4 KiB page. Page-aligned sizes avoid small surprises when the OS maps
-    the segment into multiple processes.
+    4 KiB page boundary.
+
+    .. note::
+        This is the **single-entity** sizing used by Step 1's tests and the
+        original Step 2 placeholder. The real Pyforge segment is multi-entity
+        and uses :func:`pyforge.layout.total_segment_size` (which takes
+        ``capacity`` and accounts for slot table + string pool + feature rows).
     """
     cursor = HEADER_SIZE
     for f in schema.fields:
         cursor = _align_up(cursor, CACHE_LINE_SIZE)
         cursor += f.byte_count
     return _align_up(cursor, PAGE_SIZE)
+
+
+def compute_row_offset_table(
+    schema: type[FeatureSchema],
+) -> np.ndarray[Any, np.dtype[np.void]]:
+    """Like :func:`compile_schema`, but ``byte_offset`` is row-relative (0-based).
+
+    The offset table from :func:`compile_schema` is *segment*-relative — its
+    first field sits at byte 64 (where the data area begins after the header
+    is aligned up to a cache line). For multi-entity layouts, what matters is
+    the offset within a single row, where the first field is at byte 0.
+
+    This function returns the same structured-array shape with ``byte_offset``
+    rebased to row-zero. ``name_hash``, ``dtype_code``, ``element_count``, and
+    ``byte_count`` are unchanged.
+    """
+    table = compile_schema(schema).copy()
+    if table.size > 0:
+        first = int(table["byte_offset"].min())
+        # ``first`` is align_up(HEADER_SIZE, CACHE_LINE_SIZE) by construction.
+        # Subtracting it places the first field at row offset 0.
+        table["byte_offset"] = table["byte_offset"] - first
+    return table
+
+
+def row_size(schema: type[FeatureSchema]) -> int:
+    """Bytes of one entity's row, padded so the *next* row is cache-aligned.
+
+    Computed from :func:`compute_row_offset_table` as ``align_up(max(offset +
+    byte_count), CACHE_LINE_SIZE)``. A row therefore always starts and ends on
+    a cache-line boundary, so neighbouring rows never share a cache line.
+    """
+    table = compute_row_offset_table(schema)
+    if table.size == 0:
+        return 0
+    end = int((table["byte_offset"] + table["byte_count"]).max())
+    return _align_up(end, CACHE_LINE_SIZE)

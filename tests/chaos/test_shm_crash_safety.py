@@ -98,7 +98,7 @@ def test_soak_create_close_cycle_returns_dev_shm_to_baseline(redis_client) -> No
     # dev box. The chaos property (no leak per cycle) is unchanged by count;
     # 200 cycles is enough to make any linear leak obvious.
     for _ in range(200):
-        seg = reg.create(_SoakSchema)
+        seg = reg.create(_SoakSchema, capacity=32)
         reg.close(seg)
 
     # Drain cleanup queue — simulates what Step 14's watchdog will do.

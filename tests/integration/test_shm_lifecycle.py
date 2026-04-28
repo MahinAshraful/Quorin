@@ -255,7 +255,7 @@ def test_registry_roundtrip_across_processes(redis_client, _mp_context) -> None:
         fields = [FeatureField("sentinel", dtype.float64)]
 
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_XSchema)
+    seg = reg.create(_XSchema, capacity=32)
     try:
         # Write sentinel into the first-field region (after the header).
         # First field starts at 64 (align_up(HEADER_SIZE=16, 64)=64), not

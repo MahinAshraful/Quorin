@@ -78,20 +78,21 @@ def _get_int(redis_client, key: str) -> int:
 
 def test_create_writes_correct_header(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
-        magic, version, crc = struct.unpack(HEADER_FMT, bytes(seg.mmap_view[:HEADER_LEN]))
+        magic, version, crc, capacity = struct.unpack(HEADER_FMT, bytes(seg.mmap_view[:HEADER_LEN]))
         assert magic == MAGIC
         assert version == _TinySchema.version
         expected_crc = crc32_of_bytes(compile_schema(_TinySchema).tobytes())
         assert crc == expected_crc
+        assert capacity == 32
     finally:
         reg.close(seg)
 
 
 def test_create_sets_expected_redis_keys(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
         # schema:current points at the new segment
         current = redis_client.get(_key_current(_TinySchema))
@@ -109,12 +110,12 @@ def test_create_sets_expected_redis_keys(redis_client) -> None:
 
 
 def test_create_handle_size_matches_total_segment_size(redis_client) -> None:
-    from pyforge.schema import total_segment_size
+    from pyforge.layout import total_segment_size
 
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
-        assert seg.handle.size == total_segment_size(_TinySchema)
+        assert seg.handle.size == total_segment_size(_TinySchema, capacity=32)
     finally:
         reg.close(seg)
 
@@ -132,7 +133,7 @@ def test_open_current_without_registered_segment_raises(redis_client) -> None:
 
 def test_open_current_increments_refcount(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
         assert _get_int(redis_client, _key_refcount(seg.name)) == 1
 
@@ -150,7 +151,7 @@ def test_open_current_with_crc_mismatch_raises(redis_client) -> None:
     """Create under one schema, then open under a different schema. CRC
     mismatch surfaces as SchemaCRCMismatchError."""
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
         # Point _OtherSchema's :current key at the existing segment.
         redis_client.set(_key_current(_OtherSchema), seg.name)
@@ -162,7 +163,7 @@ def test_open_current_with_crc_mismatch_raises(redis_client) -> None:
 
 def test_open_current_with_corrupted_magic_raises(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
         seg.mmap_view[:4] = b"XXXX"  # clobber magic
         with pytest.raises(SchemaCRCMismatchError):
@@ -180,7 +181,7 @@ def test_open_current_with_corrupted_magic_raises(redis_client) -> None:
 
 def test_close_decrements_refcount(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     assert _get_int(redis_client, _key_refcount(seg.name)) == 1
 
     reg.close(seg)
@@ -193,7 +194,7 @@ def test_close_adds_to_cleanup_queue_when_refcount_hits_zero(
     redis_client,
 ) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     name = seg.name
     reg.close(seg)
 
@@ -207,7 +208,7 @@ def test_close_does_not_add_to_cleanup_queue_when_others_hold(
     redis_client,
 ) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     seg2 = reg.open_current(_TinySchema)
     name = seg.name
     try:
@@ -223,7 +224,7 @@ def test_close_does_not_add_to_cleanup_queue_when_others_hold(
 
 def test_close_removes_from_pid_segments(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     name = seg.name
     reg.close(seg)
 
@@ -241,7 +242,7 @@ def test_close_removes_from_pid_segments(redis_client) -> None:
 
 def test_segment_mmap_view_is_writable(redis_client) -> None:
     reg = SegmentRegistry(redis_client)
-    seg = reg.create(_TinySchema)
+    seg = reg.create(_TinySchema, capacity=32)
     try:
         # Write past the header
         seg.mmap_view[HEADER_LEN : HEADER_LEN + 4] = b"DATA"

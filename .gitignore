@@ -70,3 +70,6 @@ dev-up.sh
 dev-*.sh
 dev-*.cmd
 dev-*.bat
+
+# Personal session-context file for Claude Code — not shared.
+CLAUDE.md
