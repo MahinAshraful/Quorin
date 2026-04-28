@@ -51,9 +51,7 @@ class _Schema4Field(FeatureSchema):
 def _build_200_field_schema() -> type[FeatureSchema]:
     """200 scalar fields + one 128-dim float32 embedding. Matches the spec's
     "realistic-production" schema sizing."""
-    fields: list[FeatureField] = [
-        FeatureField(f"feat_{i:03d}", dtype.float32) for i in range(199)
-    ]
+    fields: list[FeatureField] = [FeatureField(f"feat_{i:03d}", dtype.float32) for i in range(199)]
     fields.append(FeatureField("embedding", dtype.float32, shape=(128,)))
     return type(
         "_Schema200Field",

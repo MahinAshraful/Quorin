@@ -341,7 +341,9 @@ def test_repeated_assemble_independent_buffers() -> None:
 def test_unicode_entity_id() -> None:
     seg = make_segment(_OneScalarF32, capacity=4)
     try:
-        insert(seg, "ユーザー_001", pack_row(_OneScalarF32, {"a": np.array([7.5], dtype=np.float32)}))
+        insert(
+            seg, "ユーザー_001", pack_row(_OneScalarF32, {"a": np.array([7.5], dtype=np.float32)})
+        )
 
         out = assemble(seg, "ユーザー_001")
         assert out[0] == np.float32(7.5)
@@ -355,7 +357,9 @@ def test_visibility_after_insert_in_same_process() -> None:
     seg = make_segment(_OneScalarF32, capacity=8)
     try:
         for i in range(5):
-            insert(seg, f"u{i}", pack_row(_OneScalarF32, {"a": np.array([float(i)], dtype=np.float32)}))
+            insert(
+                seg, f"u{i}", pack_row(_OneScalarF32, {"a": np.array([float(i)], dtype=np.float32)})
+            )
             out = assemble(seg, f"u{i}")
             assert out[0] == float(i)
     finally:

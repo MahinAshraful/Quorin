@@ -123,9 +123,7 @@ def _random_value_for(field: FeatureField, rng: np.random.Generator) -> np.ndarr
 
 @_HYPO
 @given(field_list=_field_list(), seed=st.integers(min_value=0, max_value=2**31 - 1))
-def test_output_length_equals_sum_element_counts(
-    field_list: list[FeatureField], seed: int
-) -> None:
+def test_output_length_equals_sum_element_counts(field_list: list[FeatureField], seed: int) -> None:
     schema = _build_schema(field_list)
     rng = np.random.default_rng(seed)
     seg = make_segment(schema, capacity=2)
@@ -142,9 +140,7 @@ def test_output_length_equals_sum_element_counts(
 
 @_HYPO
 @given(field_list=_field_list(), seed=st.integers(min_value=0, max_value=2**31 - 1))
-def test_output_segments_match_declaration_order(
-    field_list: list[FeatureField], seed: int
-) -> None:
+def test_output_segments_match_declaration_order(field_list: list[FeatureField], seed: int) -> None:
     """For each field i in declaration order, ``out[cursor_i : cursor_i + n_i]``
     equals the field's value cast to float32. Verifies the central contract:
     declaration order, not hash order."""
@@ -190,7 +186,9 @@ def test_float32_only_round_trip_exact(field_list: list[FeatureField], seed: int
     rng = np.random.default_rng(seed)
     seg = make_segment(schema, capacity=2)
     try:
-        values = {f.name: rng.standard_normal(f.element_count).astype(np.float32) for f in schema.fields}
+        values = {
+            f.name: rng.standard_normal(f.element_count).astype(np.float32) for f in schema.fields
+        }
         insert(seg, "u", pack_row(schema, values))
         out = assemble(seg, "u")
 

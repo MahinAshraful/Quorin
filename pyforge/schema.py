@@ -226,9 +226,7 @@ def _align_up(value: int, alignment: int) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
 
-def _field_byte_offsets(
-    field_list: list[FeatureField], *, base: int = HEADER_SIZE
-) -> list[int]:
+def _field_byte_offsets(field_list: list[FeatureField], *, base: int = HEADER_SIZE) -> list[int]:
     """Walk ``field_list`` in declaration order, returning each field's start
     byte offset.
 

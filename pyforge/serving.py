@@ -40,9 +40,7 @@ class EntityNotFoundError(RuntimeError):
         self.entity_id = entity_id
 
 
-def assemble(
-    segment: Segment, entity_id: str
-) -> np.ndarray[Any, np.dtype[np.float32]]:
+def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Assemble the feature vector for ``entity_id`` as a 1-D float32 array.
 
     Output is C-contiguous, ``dtype=float32``, ``shape=(layout.total_element_count,)``.
