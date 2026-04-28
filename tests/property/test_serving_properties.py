@@ -10,6 +10,7 @@ from __future__ import annotations
 import string
 import sys
 
+import numpy as np
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -19,18 +20,15 @@ pytestmark = pytest.mark.skipif(
     reason="serving requires POSIX (Linux/WSL2)",
 )
 
-import numpy as np  # noqa: E402
-
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
 from pyforge.layout import insert  # noqa: E402
 from pyforge.schema import (  # noqa: E402
+    DTYPE_TO_NUMPY,
     DType,
     FeatureField,
     FeatureSchema,
-    DTYPE_TO_NUMPY,
 )
 from pyforge.serving import assemble  # noqa: E402
-
 
 _HYPO = settings(
     max_examples=150,

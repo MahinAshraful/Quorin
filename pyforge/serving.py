@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from pyforge.shm import Segment
 
 
-class EntityNotFound(RuntimeError):
+class EntityNotFoundError(RuntimeError):
     """Raised by :func:`assemble` when no row exists for the given entity_id.
 
     Inherits :class:`RuntimeError` to match the existing pyforge convention
@@ -59,7 +59,7 @@ def assemble(
     Raises:
         ValueError: if ``entity_id`` is empty (delegated to
             :func:`pyforge.layout.lookup`).
-        EntityNotFound: if no row exists for ``entity_id``.
+        EntityNotFoundError: if no row exists for ``entity_id``.
 
     .. note::
         The per-field ``np.frombuffer`` views over ``segment.handle.buf``
@@ -70,7 +70,7 @@ def assemble(
     """
     row_offset = lookup(segment, entity_id)
     if row_offset is None:
-        raise EntityNotFound(entity_id)
+        raise EntityNotFoundError(entity_id)
 
     layout = segment.layout
     buf = segment.handle.buf

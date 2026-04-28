@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 import pytest
 
 pytestmark = [
@@ -18,8 +19,6 @@ pytestmark = [
         reason="serving requires POSIX (Linux/WSL2)",
     ),
 ]
-
-import numpy as np  # noqa: E402
 
 from _helpers import pack_row  # noqa: E402
 from pyforge.layout import insert  # noqa: E402

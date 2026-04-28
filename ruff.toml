@@ -32,6 +32,14 @@ ignore = [
 "tests/**" = ["PLR2004", "S101", "PLR0915", "PLC2701", "RUF012", "PLC0415"]
 "benchmarks/**" = ["PLR2004", "PLC2701", "RUF012", "PLC0415"]
 
+[lint.isort]
+# `_helpers` lives in tests/_helpers.py and is importable thanks to
+# pythonpath = ["tests"] in pyproject.toml. Without this, ruff classifies it
+# as third-party and demands a blank line between `import numpy` and
+# `from _helpers import ...`. Treating both pyforge and _helpers as
+# first-party keeps the import order natural.
+known-first-party = ["pyforge", "_helpers"]
+
 [format]
 quote-style = "double"
 indent-style = "space"

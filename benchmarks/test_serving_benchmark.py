@@ -14,9 +14,11 @@ Targets we gate on (see benchmarks/regression/thresholds.yml):
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import tracemalloc
 
+import numpy as np
 import pytest
 
 pytestmark = pytest.mark.skipif(
@@ -24,13 +26,10 @@ pytestmark = pytest.mark.skipif(
     reason="serving requires POSIX (Linux/WSL2)",
 )
 
-import numpy as np  # noqa: E402
-
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
 from pyforge.layout import insert  # noqa: E402
 from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import EntityNotFound, assemble  # noqa: E402
-
+from pyforge.serving import EntityNotFoundError, assemble  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas covering the two headline scenarios from the spec.
@@ -126,15 +125,13 @@ def test_bench_assemble_200_field_warm(benchmark, seg_200_field) -> None:
 
 
 def test_bench_assemble_lookup_miss(benchmark, seg_4_field) -> None:
-    """Unhappy path: ensure the EntityNotFound raise path doesn't quietly
+    """Unhappy path: ensure the EntityNotFoundError raise path doesn't quietly
     regress (e.g., someone adds an exception-formatting hot loop)."""
     seg = seg_4_field
 
     def _miss() -> None:
-        try:
+        with contextlib.suppress(EntityNotFoundError):
             assemble(seg, "ghost")
-        except EntityNotFound:
-            pass
 
     benchmark(_miss)
 

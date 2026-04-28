@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 import pytest
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32",
     reason="serving requires POSIX (Linux/WSL2)",
 )
-
-import numpy as np  # noqa: E402
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
 from pyforge.layout import insert  # noqa: E402
@@ -30,8 +29,7 @@ from pyforge.schema import (  # noqa: E402
     dtype,
     total_element_count,
 )
-from pyforge.serving import EntityNotFound, assemble  # noqa: E402
-
+from pyforge.serving import EntityNotFoundError, assemble  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas used across tests. Defined at module scope so __init_subclass__ runs
@@ -274,7 +272,7 @@ def test_2d_shape_flattens_c_order() -> None:
 def test_entity_not_found_raises() -> None:
     seg = make_segment(_OneScalarF32, capacity=4)
     try:
-        with pytest.raises(EntityNotFound) as excinfo:
+        with pytest.raises(EntityNotFoundError) as excinfo:
             assemble(seg, "ghost")
         assert "ghost" in str(excinfo.value)
     finally:
@@ -286,10 +284,10 @@ def test_entity_not_found_carries_id_attribute() -> None:
     try:
         try:
             assemble(seg, "ghost")
-        except EntityNotFound as e:
+        except EntityNotFoundError as e:
             assert e.entity_id == "ghost"
         else:
-            pytest.fail("EntityNotFound was not raised")
+            pytest.fail("EntityNotFoundError was not raised")
     finally:
         release_segment(seg)
 
