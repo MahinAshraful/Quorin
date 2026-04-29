@@ -1461,7 +1461,7 @@ Mandatory set, mapped to the steps they're written during:
 - **009** (Step 14): Why missed-heartbeat-count instead of wall-clock-delta for watchdog staleness.
 - **010** (Step 17): Why no distributed features, no auth, Linux-only.
 
-These are what an interviewer reads to see how you think about tradeoffs. They're also what you'll read in 6 months when you've forgotten why something looks the way it does.
+These are the load-bearing design records. They're what a code reviewer or downstream user reads to understand a non-obvious trade-off, and what you'll read in 6 months when you've forgotten why something looks the way it does. ADRs are written during the step that introduced the decision, never batched — by the time you'd batch them you've forgotten the alternatives you considered.
 
 ## API reference
 

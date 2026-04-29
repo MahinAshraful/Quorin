@@ -75,6 +75,47 @@ SLOT_DTYPE: Final[np.dtype[np.void]] = np.dtype(
 )
 assert SLOT_DTYPE.itemsize == 24, "SLOT_DTYPE must be exactly 24 bytes"
 
+
+def _slot_field_offset(name: str) -> int:
+    """Extract a field's byte offset from ``SLOT_DTYPE.fields``.
+
+    Used to derive the ``SLOT_*_OFFSET`` constants below at module load,
+    so the kernel in :mod:`pyforge.assembly` (Step 8) doesn't carry magic
+    numbers that would silently return wrong rows on a dtype reorder.
+    """
+    fields = SLOT_DTYPE.fields
+    assert fields is not None, "SLOT_DTYPE.fields should not be None"
+    return int(fields[name][1])
+
+
+#: Byte size of one slot record (= ``SLOT_DTYPE.itemsize``). Step 8's Numba
+#: batched lookup kernel uses this as the slot stride.
+SLOT_BYTES: Final[int] = SLOT_DTYPE.itemsize
+
+#: Byte offset of the ``name_hash`` field within a slot record.
+SLOT_NAME_HASH_OFFSET: Final[int] = _slot_field_offset("name_hash")
+
+#: Byte offset of the ``id_offset`` field within a slot record.
+SLOT_ID_OFFSET_OFFSET: Final[int] = _slot_field_offset("id_offset")
+
+#: Byte offset of the ``flags`` field within a slot record.
+SLOT_FLAGS_OFFSET: Final[int] = _slot_field_offset("flags")
+
+#: Byte offset of the ``feature_row_index`` field within a slot record.
+SLOT_FEATURE_ROW_INDEX_OFFSET: Final[int] = _slot_field_offset("feature_row_index")
+
+# Pin the constants so a future SLOT_DTYPE reorder fails loudly at import,
+# not silently inside a Numba kernel returning wrong rows. The pure-Python
+# lookup() reads via ``slot["field_name"]`` and is robust to reorder; the
+# Numba kernel reads raw bytes at fixed offsets and is not.
+assert SLOT_BYTES == 24, f"SLOT_BYTES expected 24, got {SLOT_BYTES}"
+assert SLOT_NAME_HASH_OFFSET == 0, f"SLOT_NAME_HASH_OFFSET expected 0, got {SLOT_NAME_HASH_OFFSET}"
+assert SLOT_ID_OFFSET_OFFSET == 8, f"SLOT_ID_OFFSET_OFFSET expected 8, got {SLOT_ID_OFFSET_OFFSET}"
+assert SLOT_FLAGS_OFFSET == 16, f"SLOT_FLAGS_OFFSET expected 16, got {SLOT_FLAGS_OFFSET}"
+assert SLOT_FEATURE_ROW_INDEX_OFFSET == 20, (
+    f"SLOT_FEATURE_ROW_INDEX_OFFSET expected 20, got {SLOT_FEATURE_ROW_INDEX_OFFSET}"
+)
+
 #: Slot ``flags`` values. Tombstone reserved for v2 deletion support; v1 never
 #: writes 2 (no deletion). Lookup logic must treat 0 as "stop probing", any
 #: non-zero as "check this slot".

@@ -40,3 +40,11 @@ benchmarks:
     p99_seconds: 0.000010    # 10 us — must not regress past Step 5
   assemble_200_field_warm_pooled:
     p99_seconds: 0.000050    # 50 us — must not regress past Step 5
+  # Step 8 — batch assembly. The headline 5x gate is N=1000 batch vs 1000
+  # single calls; ratio is enforced manually post-run, not by these
+  # absolute thresholds. The thresholds below catch regressions in
+  # absolute terms. ADR-007 records the actual measured ratio.
+  assemble_batch_4_field_n1000:
+    p99_seconds: 0.005       # 5 ms — N=1000 4-field; comparator is ~4 ms single calls
+  assemble_batch_200_field_n1000:
+    p99_seconds: 0.010       # 10 ms — N=1000 200-field; comparator is ~5 ms single calls

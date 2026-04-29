@@ -1,0 +1,17 @@
+NUMBA_NUM_THREADS = 4
+
+       N    serial (us)    parallel (us)    speedup    crossover
+----------------------------------------------------------------
+       1           9.51             7.53       1.26x  <- parallel wins
+      10          29.13            28.81       1.01x  <- parallel wins
+      32          85.17            65.31       1.30x  <- parallel wins
+      64         167.48           148.86       1.13x  <- parallel wins
+     128         354.41           220.44       1.61x  <- parallel wins
+     256         666.87           447.50       1.49x  <- parallel wins
+    1000        2653.02          2327.42       1.14x  <- parallel wins
+   10000       30067.97         20439.27       1.47x  <- parallel wins
+
+Recommendation: set PARALLEL_THRESHOLD to the smallest N where
+the speedup ratio first exceeds 1.0 (and stays >1.0 for larger N).
+If no N shows speedup > 1.0, the parallel kernel is not viable on
+this machine; document and ship serial-only.

@@ -201,3 +201,191 @@ class BufferPool:
             f"element_count={self._element_count}, "
             f"available={len(self._buffers)})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Batch buffer pool — pre-allocated 2D float32 buffers for assemble_batch.
+# ---------------------------------------------------------------------------
+
+
+class _BatchCheckout:
+    """One-shot context manager for a single :meth:`BatchBufferPool.checkout`.
+
+    Same protocol-cost discipline as :class:`_Checkout` (Step 6): class-based
+    rather than ``@contextlib.contextmanager`` to avoid the ~700 ns generator
+    overhead. ``__slots__`` keeps the per-call allocation minimal.
+    """
+
+    __slots__ = ("_buf", "_pool")
+
+    def __init__(self, pool: BatchBufferPool) -> None:
+        self._pool = pool
+        self._buf: np.ndarray[Any, np.dtype[np.float32]] | None = None
+
+    def __enter__(self) -> np.ndarray[Any, np.dtype[np.float32]]:
+        pool = self._pool
+        try:
+            buf = pool._buffers.popleft()
+        except IndexError:
+            pool_miss_total.labels(schema=pool._schema_label).inc()
+            buf = np.zeros((pool._batch_size, pool._element_count), dtype=np.float32)
+        self._buf = buf
+        return buf
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        buf = self._buf
+        if buf is None:
+            return
+        self._buf = None
+        pool = self._pool
+        if pool._zero_on_return:
+            # ~50-100 us at batch=1000, opt-in only. See class docstring
+            # for the full-buffer-overwrite invariant that makes False safe.
+            buf.fill(0)
+        if len(pool._buffers) < pool._max_size:
+            pool._buffers.append(buf)
+
+
+class BatchBufferPool:
+    """Pool of ``(batch_size, total_element_count)`` float32 buffers.
+
+    Sized for a single ``(schema, batch_size)`` pair. Distinct from
+    :class:`BufferPool` because:
+
+    - Output shape is 2D, not 1D.
+    - ``zero_on_return`` defaults to ``False`` (cost at batch=1000 is
+      ~50-100 us, would erase the entire pool win on the call that should
+      benefit most).
+    - ``max_size`` defaults to ``64`` (memory ceiling).
+    - ``batch_size`` is required (no implicit dimension).
+
+    Memory budget::
+
+        max_size * batch_size * total_element_count(schema) * 4 bytes
+
+    Worked example: ``BatchBufferPool(my_200_field_schema, batch_size=10000)``
+    with ``max_size=64`` (the default) and a 200-field-with-128-emb schema
+    (total_element_count ~= 327) holds::
+
+        64 * 10000 * 327 * 4 bytes = ~838 MiB
+
+    Inverse - for an X MiB memory budget::
+
+        max_size = (X * 1024 * 1024) / (batch_size * element_count * 4)
+
+    Tune ``max_size`` to your worker count and request burst pattern. The
+    default of 64 is appropriate for moderate batch sizes (100-1000);
+    explicitly lower it for batch >= 5000.
+
+    **Default ``zero_on_return=False`` safety contract**
+
+    Safe for :func:`pyforge.assembly.assemble_batch` because the kernel
+    guarantees full-buffer overwrite - every row is either filled with
+    feature data (hit) or explicitly zeroed (miss). Prior buffer contents
+    are never read by the consumer.
+
+    *Load-bearing invariant*: if the kernel ever changes such that a row
+    could be partially written, this default becomes a data-leak vector.
+    If you reuse pool buffers for any other purpose (debug print, copy to
+    caller, alternate kernel), set ``zero_on_return=True`` to defend
+    against prior-data leakage. Cost at batch=1000: ~50-100 us per return.
+
+    Construction allocates a single contiguous ``(max_size, batch_size,
+    element_count)`` slab once and slices it into the deque. One allocator
+    call instead of ``max_size``, lower allocator-metadata overhead, future
+    huge-page coalescing friendly. The slab ndarray stays alive as long as
+    any of its slice-views is referenced; the deque holds them all.
+    """
+
+    __slots__ = (
+        "_batch_size",
+        "_buffers",
+        "_element_count",
+        "_max_size",
+        "_schema_label",
+        "_zero_on_return",
+    )
+
+    def __init__(
+        self,
+        schema: type[FeatureSchema],
+        *,
+        batch_size: int,
+        max_size: int = 64,
+        zero_on_return: bool = False,
+    ) -> None:
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        if max_size < 1:
+            raise ValueError(f"max_size must be >= 1, got {max_size}")
+        self._schema_label = f"{schema.__module__}.{schema.__qualname__}"
+        self._element_count = total_element_count(schema)
+        self._batch_size = batch_size
+        self._max_size = max_size
+        self._zero_on_return = zero_on_return
+        # Single contiguous slab. The slab is kept alive by the deque holding
+        # views into it; when the deque drops a view, that row's memory is
+        # still pinned by every other view, so the slab persists until the
+        # pool itself is collected.
+        slab = np.zeros((max_size, batch_size, self._element_count), dtype=np.float32)
+        self._buffers: collections.deque[np.ndarray[Any, np.dtype[np.float32]]] = collections.deque(
+            slab[i] for i in range(max_size)
+        )
+
+    def checkout(self) -> _BatchCheckout:
+        """Return a one-shot context manager that yields a pooled 2D buffer.
+
+        Buffer shape is ``(batch_size, element_count)``, dtype ``float32``,
+        C-contiguous, writeable.
+
+        Pool hit: a pre-allocated buffer is popped from the deque.
+
+        Pool miss: a fresh ``np.zeros`` is allocated and ``pool_miss_total``
+        is incremented. The fresh buffer joins the pool on return if there
+        is capacity, growing toward steady-state.
+
+        ``__exit__`` runs even when the ``with`` body raises (including
+        ``KeyboardInterrupt``), so a signal injected mid-block cannot leak
+        the buffer.
+        """
+        return _BatchCheckout(self)
+
+    @property
+    def available(self) -> int:
+        """Buffers currently in the pool. Read-only; race-free under GIL."""
+        return len(self._buffers)
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
+
+    @property
+    def max_size(self) -> int:
+        return self._max_size
+
+    @property
+    def element_count(self) -> int:
+        return self._element_count
+
+    @property
+    def schema_name(self) -> str:
+        """``f"{module}.{qualname}"`` of the schema this pool was built for."""
+        return self._schema_label
+
+    @property
+    def zero_on_return(self) -> bool:
+        return self._zero_on_return
+
+    def __repr__(self) -> str:
+        return (
+            f"BatchBufferPool(schema={self._schema_label!r}, "
+            f"batch_size={self._batch_size}, "
+            f"max_size={self._max_size}, "
+            f"element_count={self._element_count}, "
+            f"available={len(self._buffers)})"
+        )

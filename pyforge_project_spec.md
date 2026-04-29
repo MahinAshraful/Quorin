@@ -411,17 +411,20 @@ Pyforge runs on one machine. It does not shard across machines, it does not repl
 
 ---
 
-## The Interview Narrative
+## The Design Thesis
 
-When you sit across from an engineer at Two Sigma or D.E. Shaw and they ask about this project, here is the story you tell:
+The bottleneck in ML feature serving is rarely the model — it's the infrastructure around the model. Tools like Feast solve this with Redis plus Python dicts, which works but has two structural problems: Python object allocation on every request creates GC pressure that shows up as p999 spikes, and the serialization/deserialization cycle is pure overhead.
 
-"The bottleneck in ML serving is rarely the model — it's the infrastructure around the model. Feast and similar tools solve this with Redis plus Python dicts, which works but has two problems: Python object allocation on every request creates GC pressure that shows up as p999 spikes, and the serialization/deserialization cycle is pure overhead.
+Pyforge eliminates both problems for single-node serving. Hot features live in shared memory as typed NumPy arrays. The read path is a pre-computed offset table lookup followed by a Numba-compiled memory copy — no Python objects allocated, no GC involved. The measured target is ~5 µs p99 for warm-cache, small-schema reads, vs ~200 µs for the Redis path on the same hardware.
 
-I built Pyforge to eliminate both problems for single-node serving. Hot features live in shared memory as typed NumPy arrays. The read path is a pre-computed offset table lookup followed by a Numba-compiled memory copy — no Python objects allocated, no GC involved. The result is ~5µs p99 vs ~200µs for the Redis path on the same hardware.
+The non-trivial engineering surface:
+- Managing shared memory segment lifecycle when schemas evolve.
+- Handling process crashes without memory leaks via a watchdog.
+- Making the batch assembly path vectorized so 1,000 entities don't mean 1,000 individual reads.
+- Tightening tail latency (p999, p9999) by managing GC behavior — freeze, callback instrumentation, threshold-tuned timer threads.
+- Eliminating allocation churn from the hot path via pre-allocated buffer pools.
 
-The interesting engineering challenges were: managing shared memory segment lifecycle when schemas evolve, handling process crashes without memory leaks via a watchdog, and making the batch assembly path vectorized so 1,000 entities don't mean 1,000 individual reads."
-
-Every sentence of that answer demonstrates concrete engineering knowledge. None of it is theoretical.
+Every claim in this spec is grounded in measured behavior, not theory. Performance numbers in the docs are repeat-measured (N≥20 fresh subprocesses) per ADR-006's methodology.
 
 ---
 
