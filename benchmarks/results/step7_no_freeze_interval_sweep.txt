@@ -1,0 +1,1786 @@
+Step 7 — repeat-run GC tail-latency benchmark
+Methodology: 20 fresh subprocesses per scenario
+Scenarios: ['interval_0.5', 'interval_1.0', 'interval_2.0', 'interval_5.0']
+Generated: 2026-04-29 04:23:42
+================================================================================
+
+--- interval_0.5 run 1: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.31 us
+      p99_us:    11.48 us
+     p999_us:    31.12 us
+    p9999_us:    88.10 us
+      max_us: 45184.41 us
+.
+
+============================== 1 passed in 5.80s ===============================
+
+--- interval_0.5 run 2: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.29 us
+      p99_us:    11.69 us
+     p999_us:    38.37 us
+    p9999_us:   145.06 us
+      max_us: 66443.53 us
+.
+
+============================== 1 passed in 5.74s ===============================
+
+--- interval_0.5 run 3: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.37 us
+      p99_us:    11.65 us
+     p999_us:    28.68 us
+    p9999_us:    77.95 us
+      max_us: 45420.23 us
+.
+
+============================== 1 passed in 5.71s ===============================
+
+--- interval_0.5 run 4: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.25 us
+      p99_us:    11.49 us
+     p999_us:    27.61 us
+    p9999_us:    80.70 us
+      max_us: 43843.80 us
+.
+
+============================== 1 passed in 5.70s ===============================
+
+--- interval_0.5 run 5: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.32 us
+      p99_us:    11.16 us
+     p999_us:    26.90 us
+    p9999_us:    71.61 us
+      max_us: 45641.47 us
+.
+
+============================== 1 passed in 5.82s ===============================
+
+--- interval_0.5 run 6: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.29 us
+      p99_us:    11.26 us
+     p999_us:    24.13 us
+    p9999_us:    55.57 us
+      max_us: 51084.67 us
+.
+
+============================== 1 passed in 5.63s ===============================
+
+--- interval_0.5 run 7: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.28 us
+      p99_us:    12.06 us
+     p999_us:    33.70 us
+    p9999_us:    88.68 us
+      max_us: 49443.01 us
+.
+
+============================== 1 passed in 5.72s ===============================
+
+--- interval_0.5 run 8: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.34 us
+      p99_us:    11.43 us
+     p999_us:    30.52 us
+    p9999_us:    61.71 us
+      max_us: 49918.09 us
+.
+
+============================== 1 passed in 5.81s ===============================
+
+--- interval_0.5 run 9: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.29 us
+      p99_us:    11.83 us
+     p999_us:    26.72 us
+    p9999_us:    76.02 us
+      max_us: 46896.75 us
+.
+
+============================== 1 passed in 5.70s ===============================
+
+--- interval_0.5 run 10: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.23 us
+      p99_us:    11.24 us
+     p999_us:    23.44 us
+    p9999_us:    60.39 us
+      max_us:   115.51 us
+.
+
+============================== 1 passed in 5.88s ===============================
+
+--- interval_0.5 run 11: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.36 us
+      p99_us:    11.01 us
+     p999_us:    25.33 us
+    p9999_us:    58.31 us
+      max_us: 44812.70 us
+.
+
+============================== 1 passed in 5.77s ===============================
+
+--- interval_0.5 run 12: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.27 us
+      p99_us:    13.16 us
+     p999_us:    45.21 us
+    p9999_us:   154.98 us
+      max_us: 47437.88 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_0.5 run 13: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.32 us
+      p99_us:    12.42 us
+     p999_us:    29.71 us
+    p9999_us:   148.06 us
+      max_us: 47034.95 us
+.
+
+============================== 1 passed in 5.61s ===============================
+
+--- interval_0.5 run 14: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.33 us
+      p99_us:    11.29 us
+     p999_us:    28.07 us
+    p9999_us:    71.29 us
+      max_us: 49495.98 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_0.5 run 15: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.25 us
+      p99_us:    11.03 us
+     p999_us:    23.44 us
+    p9999_us:    55.09 us
+      max_us: 46342.70 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_0.5 run 16: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.27 us
+      p99_us:    12.53 us
+     p999_us:    32.31 us
+    p9999_us:    98.61 us
+      max_us: 53032.16 us
+.
+
+============================== 1 passed in 5.86s ===============================
+
+--- interval_0.5 run 17: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.25 us
+      p99_us:    10.99 us
+     p999_us:    23.02 us
+    p9999_us:    64.06 us
+      max_us: 50561.71 us
+.
+
+============================== 1 passed in 5.63s ===============================
+
+--- interval_0.5 run 18: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.28 us
+      p99_us:    11.11 us
+     p999_us:    24.40 us
+    p9999_us:    64.54 us
+      max_us:   110.53 us
+.
+
+============================== 1 passed in 5.64s ===============================
+
+--- interval_0.5 run 19: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.34 us
+      p99_us:    11.74 us
+     p999_us:    27.22 us
+    p9999_us:    71.99 us
+      max_us: 44064.61 us
+.
+
+============================== 1 passed in 5.75s ===============================
+
+--- interval_0.5 run 20: test_p999_no_freeze_timer_interval_sweep[0.5] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_0.5
+      p50_us:     5.32 us
+      p99_us:    10.91 us
+     p999_us:    23.95 us
+    p9999_us:    71.16 us
+      max_us: 45786.10 us
+.
+
+============================== 1 passed in 5.72s ===============================
+
+--- interval_1.0 run 1: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.31 us
+      p99_us:     9.80 us
+     p999_us:    19.34 us
+    p9999_us:    52.08 us
+      max_us:   122.48 us
+.
+
+============================== 1 passed in 5.57s ===============================
+
+--- interval_1.0 run 2: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.35 us
+      p99_us:    11.76 us
+     p999_us:    22.75 us
+    p9999_us:    61.59 us
+      max_us:   189.97 us
+.
+
+============================== 1 passed in 5.63s ===============================
+
+--- interval_1.0 run 3: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.37 us
+      p99_us:    12.31 us
+     p999_us:    31.83 us
+    p9999_us:    90.22 us
+      max_us:  1485.33 us
+.
+
+============================== 1 passed in 5.66s ===============================
+
+--- interval_1.0 run 4: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.28 us
+      p99_us:    11.66 us
+     p999_us:    27.30 us
+    p9999_us:    84.56 us
+      max_us:   117.39 us
+.
+
+============================== 1 passed in 5.64s ===============================
+
+--- interval_1.0 run 5: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.33 us
+      p99_us:    11.20 us
+     p999_us:    19.03 us
+    p9999_us:    47.06 us
+      max_us:   251.84 us
+.
+
+============================== 1 passed in 5.67s ===============================
+
+--- interval_1.0 run 6: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.33 us
+      p99_us:    11.44 us
+     p999_us:    27.20 us
+    p9999_us:    85.24 us
+      max_us:   157.27 us
+.
+
+============================== 1 passed in 5.63s ===============================
+
+--- interval_1.0 run 7: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.30 us
+      p99_us:    14.06 us
+     p999_us:    37.99 us
+    p9999_us:   102.71 us
+      max_us:   332.59 us
+.
+
+============================== 1 passed in 5.95s ===============================
+
+--- interval_1.0 run 8: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.28 us
+      p99_us:    11.72 us
+     p999_us:    32.48 us
+    p9999_us:    84.71 us
+      max_us:   148.26 us
+.
+
+============================== 1 passed in 5.43s ===============================
+
+--- interval_1.0 run 9: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.28 us
+      p99_us:    13.49 us
+     p999_us:    46.03 us
+    p9999_us:   159.91 us
+      max_us:   441.64 us
+.
+
+============================== 1 passed in 5.55s ===============================
+
+--- interval_1.0 run 10: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.30 us
+      p99_us:    11.60 us
+     p999_us:    26.94 us
+    p9999_us:    69.95 us
+      max_us:   445.48 us
+.
+
+============================== 1 passed in 5.60s ===============================
+
+--- interval_1.0 run 11: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.27 us
+      p99_us:    10.81 us
+     p999_us:    25.41 us
+    p9999_us:    74.40 us
+      max_us:   305.03 us
+.
+
+============================== 1 passed in 5.67s ===============================
+
+--- interval_1.0 run 12: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.22 us
+      p99_us:    12.23 us
+     p999_us:    38.31 us
+    p9999_us:   125.80 us
+      max_us:   619.15 us
+.
+
+============================== 1 passed in 5.56s ===============================
+
+--- interval_1.0 run 13: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.38 us
+      p99_us:    11.16 us
+     p999_us:    21.91 us
+    p9999_us:    64.31 us
+      max_us:   145.41 us
+.
+
+============================== 1 passed in 5.71s ===============================
+
+--- interval_1.0 run 14: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.26 us
+      p99_us:    11.56 us
+     p999_us:    24.40 us
+    p9999_us:    63.98 us
+      max_us:   188.20 us
+.
+
+============================== 1 passed in 5.64s ===============================
+
+--- interval_1.0 run 15: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.27 us
+      p99_us:    14.09 us
+     p999_us:    38.67 us
+    p9999_us:    77.70 us
+      max_us:   178.97 us
+.
+
+============================== 1 passed in 5.96s ===============================
+
+--- interval_1.0 run 16: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.30 us
+      p99_us:    14.21 us
+     p999_us:    35.01 us
+    p9999_us:    77.01 us
+      max_us:   175.19 us
+.
+
+============================== 1 passed in 4.52s ===============================
+
+--- interval_1.0 run 17: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.36 us
+      p99_us:    12.08 us
+     p999_us:    31.31 us
+    p9999_us:    68.60 us
+      max_us:   137.54 us
+.
+
+============================== 1 passed in 4.84s ===============================
+
+--- interval_1.0 run 18: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.34 us
+      p99_us:    12.43 us
+     p999_us:    36.65 us
+    p9999_us:    68.07 us
+      max_us:   138.18 us
+.
+
+============================== 1 passed in 4.88s ===============================
+
+--- interval_1.0 run 19: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.31 us
+      p99_us:    13.33 us
+     p999_us:    33.66 us
+    p9999_us:    63.91 us
+      max_us:   276.74 us
+.
+
+============================== 1 passed in 4.88s ===============================
+
+--- interval_1.0 run 20: test_p999_no_freeze_timer_interval_sweep[1.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_1.0
+      p50_us:     5.46 us
+      p99_us:    13.04 us
+     p999_us:    41.14 us
+    p9999_us:    84.01 us
+      max_us:   217.73 us
+.
+
+============================== 1 passed in 4.94s ===============================
+
+--- interval_2.0 run 1: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.27 us
+      p99_us:    12.65 us
+     p999_us:    34.19 us
+    p9999_us:    72.52 us
+      max_us:   136.80 us
+.
+
+============================== 1 passed in 4.95s ===============================
+
+--- interval_2.0 run 2: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.40 us
+      p99_us:    11.54 us
+     p999_us:    30.79 us
+    p9999_us:    90.55 us
+      max_us:   230.00 us
+.
+
+============================== 1 passed in 4.92s ===============================
+
+--- interval_2.0 run 3: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.31 us
+      p99_us:    11.25 us
+     p999_us:    26.26 us
+    p9999_us:    62.39 us
+      max_us:   170.56 us
+.
+
+============================== 1 passed in 5.42s ===============================
+
+--- interval_2.0 run 4: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.26 us
+      p99_us:    11.03 us
+     p999_us:    22.03 us
+    p9999_us:    59.71 us
+      max_us:   534.80 us
+.
+
+============================== 1 passed in 5.60s ===============================
+
+--- interval_2.0 run 5: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.36 us
+      p99_us:    11.40 us
+     p999_us:    23.75 us
+    p9999_us:    51.17 us
+      max_us:   118.28 us
+.
+
+============================== 1 passed in 5.65s ===============================
+
+--- interval_2.0 run 6: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.26 us
+      p99_us:    11.89 us
+     p999_us:    30.05 us
+    p9999_us:    73.39 us
+      max_us:   313.09 us
+.
+
+============================== 1 passed in 5.62s ===============================
+
+--- interval_2.0 run 7: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.29 us
+      p99_us:    12.36 us
+     p999_us:    41.84 us
+    p9999_us:    97.07 us
+      max_us:   528.11 us
+.
+
+============================== 1 passed in 5.93s ===============================
+
+--- interval_2.0 run 8: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.34 us
+      p99_us:    11.24 us
+     p999_us:    20.18 us
+    p9999_us:    64.52 us
+      max_us:   160.82 us
+.
+
+============================== 1 passed in 5.64s ===============================
+
+--- interval_2.0 run 9: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.33 us
+      p99_us:    11.26 us
+     p999_us:    24.84 us
+    p9999_us:    69.70 us
+      max_us:   156.63 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_2.0 run 10: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.36 us
+      p99_us:    11.09 us
+     p999_us:    23.79 us
+    p9999_us:    58.74 us
+      max_us:   277.33 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_2.0 run 11: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.30 us
+      p99_us:    13.67 us
+     p999_us:    44.61 us
+    p9999_us:   146.07 us
+      max_us:   423.21 us
+.
+
+============================== 1 passed in 5.73s ===============================
+
+--- interval_2.0 run 12: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.29 us
+      p99_us:    11.39 us
+     p999_us:    24.87 us
+    p9999_us:    64.73 us
+      max_us:   124.28 us
+.
+
+============================== 1 passed in 5.55s ===============================
+
+--- interval_2.0 run 13: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.27 us
+      p99_us:    12.65 us
+     p999_us:    33.05 us
+    p9999_us:    67.82 us
+      max_us:   231.77 us
+.
+
+============================== 1 passed in 5.57s ===============================
+
+--- interval_2.0 run 14: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.38 us
+      p99_us:    11.48 us
+     p999_us:    22.20 us
+    p9999_us:    50.59 us
+      max_us:   118.79 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_2.0 run 15: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.35 us
+      p99_us:    11.09 us
+     p999_us:    22.49 us
+    p9999_us:    55.48 us
+      max_us:   116.98 us
+.
+
+============================== 1 passed in 5.57s ===============================
+
+--- interval_2.0 run 16: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.45 us
+      p99_us:    11.10 us
+     p999_us:    27.26 us
+    p9999_us:    57.82 us
+      max_us:   132.20 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_2.0 run 17: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.25 us
+      p99_us:    10.73 us
+     p999_us:    21.52 us
+    p9999_us:    54.27 us
+      max_us:   134.23 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_2.0 run 18: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.28 us
+      p99_us:    11.68 us
+     p999_us:    29.72 us
+    p9999_us:    82.18 us
+      max_us:   224.09 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_2.0 run 19: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.25 us
+      p99_us:    11.11 us
+     p999_us:    20.39 us
+    p9999_us:    54.20 us
+      max_us:    88.31 us
+.
+
+============================== 1 passed in 5.71s ===============================
+
+--- interval_2.0 run 20: test_p999_no_freeze_timer_interval_sweep[2.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_2.0
+      p50_us:     5.32 us
+      p99_us:    11.62 us
+     p999_us:    31.24 us
+    p9999_us:    59.39 us
+      max_us:    84.70 us
+.
+
+============================== 1 passed in 5.65s ===============================
+
+--- interval_5.0 run 1: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.35 us
+      p99_us:    11.34 us
+     p999_us:    28.05 us
+    p9999_us:    65.86 us
+      max_us:   188.35 us
+.
+
+============================== 1 passed in 5.74s ===============================
+
+--- interval_5.0 run 2: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.33 us
+      p99_us:    11.17 us
+     p999_us:    26.45 us
+    p9999_us:    53.61 us
+      max_us:   291.59 us
+.
+
+============================== 1 passed in 5.61s ===============================
+
+--- interval_5.0 run 3: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.34 us
+      p99_us:    13.17 us
+     p999_us:    35.83 us
+    p9999_us:   111.43 us
+      max_us:   384.83 us
+.
+
+============================== 1 passed in 5.62s ===============================
+
+--- interval_5.0 run 4: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.33 us
+      p99_us:    11.26 us
+     p999_us:    24.37 us
+    p9999_us:    63.49 us
+      max_us:   118.38 us
+.
+
+============================== 1 passed in 5.60s ===============================
+
+--- interval_5.0 run 5: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.32 us
+      p99_us:    12.17 us
+     p999_us:    29.73 us
+    p9999_us:    53.75 us
+      max_us:   110.70 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_5.0 run 6: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.34 us
+      p99_us:    11.72 us
+     p999_us:    30.77 us
+    p9999_us:    81.85 us
+      max_us:   729.11 us
+.
+
+============================== 1 passed in 5.60s ===============================
+
+--- interval_5.0 run 7: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.80 us
+      p99_us:    12.89 us
+     p999_us:    30.06 us
+    p9999_us:    91.61 us
+      max_us:   203.01 us
+.
+
+============================== 1 passed in 5.68s ===============================
+
+--- interval_5.0 run 8: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.30 us
+      p99_us:    12.99 us
+     p999_us:    43.69 us
+    p9999_us:   133.67 us
+      max_us:   374.64 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_5.0 run 9: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.29 us
+      p99_us:    11.15 us
+     p999_us:    20.44 us
+    p9999_us:    52.83 us
+      max_us:    99.21 us
+.
+
+============================== 1 passed in 5.53s ===============================
+
+--- interval_5.0 run 10: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.31 us
+      p99_us:    11.98 us
+     p999_us:    30.23 us
+    p9999_us:    79.46 us
+      max_us:   268.47 us
+.
+
+============================== 1 passed in 5.55s ===============================
+
+--- interval_5.0 run 11: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.98 us
+      p99_us:    12.15 us
+     p999_us:    28.23 us
+    p9999_us:    55.08 us
+      max_us:   102.10 us
+.
+
+============================== 1 passed in 5.64s ===============================
+
+--- interval_5.0 run 12: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.40 us
+      p99_us:    12.09 us
+     p999_us:    30.42 us
+    p9999_us:    81.68 us
+      max_us:   159.10 us
+.
+
+============================== 1 passed in 5.61s ===============================
+
+--- interval_5.0 run 13: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.34 us
+      p99_us:    12.32 us
+     p999_us:    36.39 us
+    p9999_us:   108.01 us
+      max_us:   286.12 us
+.
+
+============================== 1 passed in 5.60s ===============================
+
+--- interval_5.0 run 14: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.29 us
+      p99_us:    12.07 us
+     p999_us:    32.96 us
+    p9999_us:    71.01 us
+      max_us:   497.61 us
+.
+
+============================== 1 passed in 5.80s ===============================
+
+--- interval_5.0 run 15: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.34 us
+      p99_us:    11.68 us
+     p999_us:    31.61 us
+    p9999_us:    68.10 us
+      max_us:   120.33 us
+.
+
+============================== 1 passed in 8.01s ===============================
+
+--- interval_5.0 run 16: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.43 us
+      p99_us:    12.37 us
+     p999_us:    31.35 us
+    p9999_us:   111.08 us
+      max_us:   354.55 us
+.
+
+============================== 1 passed in 6.20s ===============================
+
+--- interval_5.0 run 17: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.28 us
+      p99_us:    11.66 us
+     p999_us:    27.68 us
+    p9999_us:    65.28 us
+      max_us:   155.31 us
+.
+
+============================== 1 passed in 5.59s ===============================
+
+--- interval_5.0 run 18: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.37 us
+      p99_us:    11.17 us
+     p999_us:    24.14 us
+    p9999_us:    57.69 us
+      max_us:   128.92 us
+.
+
+============================== 1 passed in 5.58s ===============================
+
+--- interval_5.0 run 19: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.27 us
+      p99_us:    12.05 us
+     p999_us:    30.31 us
+    p9999_us:    73.80 us
+      max_us:   120.31 us
+.
+
+============================== 1 passed in 5.70s ===============================
+
+--- interval_5.0 run 20: test_p999_no_freeze_timer_interval_sweep[5.0] ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.0.3, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /mnt/c/Users/mahin/Desktop/Programming/PyForge
+configfile: pyproject.toml
+plugins: hypothesis-6.152.2, asyncio-1.3.0, benchmark-5.2.3, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+benchmarks/test_gc_p999.py 
+[gc_p999] no_freeze_timer_interval_5.0
+      p50_us:     5.30 us
+      p99_us:    11.60 us
+     p999_us:    29.52 us
+    p9999_us:    62.33 us
+      max_us:   122.43 us
+.
+
+============================== 1 passed in 5.57s ===============================
+
+================================================================================
+Per-run results (microseconds)
+================================================================================
+scenario                run      p50      p99     p999     p9999       max
+interval_0.5              1     5.31    11.48    31.12     88.10  45184.41
+interval_0.5              2     5.29    11.69    38.37    145.06  66443.53
+interval_0.5              3     5.37    11.65    28.68     77.95  45420.23
+interval_0.5              4     5.25    11.49    27.61     80.70  43843.80
+interval_0.5              5     5.32    11.16    26.90     71.61  45641.47
+interval_0.5              6     5.29    11.26    24.13     55.57  51084.67
+interval_0.5              7     5.28    12.06    33.70     88.68  49443.01
+interval_0.5              8     5.34    11.43    30.52     61.71  49918.09
+interval_0.5              9     5.29    11.83    26.72     76.02  46896.75
+interval_0.5             10     5.23    11.24    23.44     60.39    115.51
+interval_0.5             11     5.36    11.01    25.33     58.31  44812.70
+interval_0.5             12     5.27    13.16    45.21    154.98  47437.88
+interval_0.5             13     5.32    12.42    29.71    148.06  47034.95
+interval_0.5             14     5.33    11.29    28.07     71.29  49495.98
+interval_0.5             15     5.25    11.03    23.44     55.09  46342.70
+interval_0.5             16     5.27    12.53    32.31     98.61  53032.16
+interval_0.5             17     5.25    10.99    23.02     64.06  50561.71
+interval_0.5             18     5.28    11.11    24.40     64.54    110.53
+interval_0.5             19     5.34    11.74    27.22     71.99  44064.61
+interval_0.5             20     5.32    10.91    23.95     71.16  45786.10
+
+interval_1.0              1     5.31     9.80    19.34     52.08    122.48
+interval_1.0              2     5.35    11.76    22.75     61.59    189.97
+interval_1.0              3     5.37    12.31    31.83     90.22   1485.33
+interval_1.0              4     5.28    11.66    27.30     84.56    117.39
+interval_1.0              5     5.33    11.20    19.03     47.06    251.84
+interval_1.0              6     5.33    11.44    27.20     85.24    157.27
+interval_1.0              7     5.30    14.06    37.99    102.71    332.59
+interval_1.0              8     5.28    11.72    32.48     84.71    148.26
+interval_1.0              9     5.28    13.49    46.03    159.91    441.64
+interval_1.0             10     5.30    11.60    26.94     69.95    445.48
+interval_1.0             11     5.27    10.81    25.41     74.40    305.03
+interval_1.0             12     5.22    12.23    38.31    125.80    619.15
+interval_1.0             13     5.38    11.16    21.91     64.31    145.41
+interval_1.0             14     5.26    11.56    24.40     63.98    188.20
+interval_1.0             15     5.27    14.09    38.67     77.70    178.97
+interval_1.0             16     5.30    14.21    35.01     77.01    175.19
+interval_1.0             17     5.36    12.08    31.31     68.60    137.54
+interval_1.0             18     5.34    12.43    36.65     68.07    138.18
+interval_1.0             19     5.31    13.33    33.66     63.91    276.74
+interval_1.0             20     5.46    13.04    41.14     84.01    217.73
+
+interval_2.0              1     5.27    12.65    34.19     72.52    136.80
+interval_2.0              2     5.40    11.54    30.79     90.55    230.00
+interval_2.0              3     5.31    11.25    26.26     62.39    170.56
+interval_2.0              4     5.26    11.03    22.03     59.71    534.80
+interval_2.0              5     5.36    11.40    23.75     51.17    118.28
+interval_2.0              6     5.26    11.89    30.05     73.39    313.09
+interval_2.0              7     5.29    12.36    41.84     97.07    528.11
+interval_2.0              8     5.34    11.24    20.18     64.52    160.82
+interval_2.0              9     5.33    11.26    24.84     69.70    156.63
+interval_2.0             10     5.36    11.09    23.79     58.74    277.33
+interval_2.0             11     5.30    13.67    44.61    146.07    423.21
+interval_2.0             12     5.29    11.39    24.87     64.73    124.28
+interval_2.0             13     5.27    12.65    33.05     67.82    231.77
+interval_2.0             14     5.38    11.48    22.20     50.59    118.79
+interval_2.0             15     5.35    11.09    22.49     55.48    116.98
+interval_2.0             16     5.45    11.10    27.26     57.82    132.20
+interval_2.0             17     5.25    10.73    21.52     54.27    134.23
+interval_2.0             18     5.28    11.68    29.72     82.18    224.09
+interval_2.0             19     5.25    11.11    20.39     54.20     88.31
+interval_2.0             20     5.32    11.62    31.24     59.39     84.70
+
+interval_5.0              1     5.35    11.34    28.05     65.86    188.35
+interval_5.0              2     5.33    11.17    26.45     53.61    291.59
+interval_5.0              3     5.34    13.17    35.83    111.43    384.83
+interval_5.0              4     5.33    11.26    24.37     63.49    118.38
+interval_5.0              5     5.32    12.17    29.73     53.75    110.70
+interval_5.0              6     5.34    11.72    30.77     81.85    729.11
+interval_5.0              7     5.80    12.89    30.06     91.61    203.01
+interval_5.0              8     5.30    12.99    43.69    133.67    374.64
+interval_5.0              9     5.29    11.15    20.44     52.83     99.21
+interval_5.0             10     5.31    11.98    30.23     79.46    268.47
+interval_5.0             11     5.98    12.15    28.23     55.08    102.10
+interval_5.0             12     5.40    12.09    30.42     81.68    159.10
+interval_5.0             13     5.34    12.32    36.39    108.01    286.12
+interval_5.0             14     5.29    12.07    32.96     71.01    497.61
+interval_5.0             15     5.34    11.68    31.61     68.10    120.33
+interval_5.0             16     5.43    12.37    31.35    111.08    354.55
+interval_5.0             17     5.28    11.66    27.68     65.28    155.31
+interval_5.0             18     5.37    11.17    24.14     57.69    128.92
+interval_5.0             19     5.27    12.05    30.31     73.80    120.31
+interval_5.0             20     5.30    11.60    29.52     62.33    122.43
+
+================================================================================
+Summary: median across runs (worst_max = max-of-maxes; sd_max = stddev)
+================================================================================
+scenario                 med_p99  med_p999  med_p9999  worst_max    sd_max
+interval_0.5               11.46     27.41      71.80   66443.53  15673.89
+interval_1.0               11.92     31.57      75.71    1485.33    307.63
+interval_2.0               11.39     25.57      63.45     534.80    136.70
+interval_5.0               12.02     30.14      69.56     729.11    163.24
+
+================================================================================
+Decision rule skipped: requires both 'freeze_only' and 'freeze_plus_timer' scenarios in the run.
+================================================================================

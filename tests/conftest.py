@@ -86,3 +86,17 @@ def _shm_test_isolation() -> Iterator[None]:
             client.delete(*keys)
     finally:
         client.close()
+
+    # ---- GC manager cleanup (Step 7) -------------------------------------
+    # If a test forgot to stop_collector() / unfreeze(), this catches it so
+    # the next test starts on clean ground. Wrapped in suppress() so a
+    # broken cleanup never breaks a passing test report.
+    try:
+        from pyforge._internal import gc_manager
+    except ImportError:
+        gc_manager = None  # type: ignore[assignment]
+    if gc_manager is not None:
+        with contextlib.suppress(Exception):
+            gc_manager.stop_collector(join_timeout=1.0)
+        with contextlib.suppress(Exception):
+            gc_manager.unfreeze()
