@@ -104,17 +104,33 @@ def _assemble_core(
 # ---------------------------------------------------------------------------
 
 
-def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.float32]]:
+def assemble(
+    segment: Segment,
+    entity_id: str,
+    *,
+    out: np.ndarray[Any, np.dtype[np.float32]] | None = None,
+) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Numba-compiled equivalent of :func:`pyforge.serving.assemble`.
 
-    Output is a fresh, C-contiguous, 1-D ``np.float32`` array of shape
+    Output is C-contiguous, 1-D ``np.float32`` of shape
     ``(layout.total_element_count,)`` with elements in the **declaration order**
     of ``segment.schema.fields``. Byte-identical to the Python oracle for any
     valid segment state (verified by Step 5's parity test).
 
+    Args:
+        segment: open segment to read from.
+        entity_id: row key.
+        out: optional caller-supplied buffer. When provided, must be a
+            writeable C-contiguous float32 array of shape
+            ``(layout.total_element_count,)``; it is filled in place and
+            returned. When ``None`` (default), a fresh allocation is
+            returned. Step 6's :class:`pyforge.pool.BufferPool` is the
+            intended source of pooled buffers.
+
     Raises:
         ValueError: if ``entity_id`` is empty (delegated to
-            :func:`pyforge.layout.lookup`).
+            :func:`pyforge.layout.lookup`), or if ``out`` does not match the
+            required shape / dtype / contiguity / writeability.
         EntityNotFoundError: if no row exists for ``entity_id``.
     """
     row_offset = lookup(segment, entity_id)
@@ -122,7 +138,21 @@ def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.fl
         raise EntityNotFoundError(entity_id)
 
     layout = segment.layout
-    out = np.empty(layout.total_element_count, dtype=np.float32)
+    n = layout.total_element_count
+    if out is None:
+        out = np.empty(n, dtype=np.float32)
+    elif (
+        out.shape != (n,)
+        or out.dtype != np.float32
+        or not out.flags["C_CONTIGUOUS"]
+        or not out.flags["WRITEABLE"]
+    ):
+        raise ValueError(
+            f"out must be a writeable C-contiguous float32 array of "
+            f"shape ({n},); got shape={out.shape}, dtype={out.dtype}, "
+            f"c_contiguous={out.flags['C_CONTIGUOUS']}, "
+            f"writeable={out.flags['WRITEABLE']}"
+        )
     seg_u8 = np.frombuffer(segment.handle.buf, dtype=np.uint8)
 
     _assemble_core(

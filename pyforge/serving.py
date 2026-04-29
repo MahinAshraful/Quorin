@@ -40,7 +40,12 @@ class EntityNotFoundError(RuntimeError):
         self.entity_id = entity_id
 
 
-def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.float32]]:
+def assemble(
+    segment: Segment,
+    entity_id: str,
+    *,
+    out: np.ndarray[Any, np.dtype[np.float32]] | None = None,
+) -> np.ndarray[Any, np.dtype[np.float32]]:
     """Assemble the feature vector for ``entity_id`` as a 1-D float32 array.
 
     Output is C-contiguous, ``dtype=float32``, ``shape=(layout.total_element_count,)``.
@@ -50,13 +55,20 @@ def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.fl
     are cast on copy: float64 narrows, ints widen, uint8 promotes — NumPy's
     slice-assignment performs the cast.
 
-    The output is a fresh allocation per call. Step 6's buffer pool will add a
-    zero-allocation variant; Step 5 will replace this Python loop with a Numba
-    kernel that produces byte-identical output.
+    Args:
+        segment: open segment to read from.
+        entity_id: row key.
+        out: optional caller-supplied buffer. When provided, must be a
+            writeable C-contiguous float32 array of shape
+            ``(layout.total_element_count,)``; it is filled in place and
+            returned. When ``None`` (default), a fresh allocation is
+            returned. Step 6's :class:`pyforge.pool.BufferPool` is the
+            intended source of pooled buffers.
 
     Raises:
         ValueError: if ``entity_id`` is empty (delegated to
-            :func:`pyforge.layout.lookup`).
+            :func:`pyforge.layout.lookup`), or if ``out`` does not match the
+            required shape / dtype / contiguity / writeability.
         EntityNotFoundError: if no row exists for ``entity_id``.
 
     .. note::
@@ -72,7 +84,21 @@ def assemble(segment: Segment, entity_id: str) -> np.ndarray[Any, np.dtype[np.fl
 
     layout = segment.layout
     buf = segment.handle.buf
-    out = np.empty(layout.total_element_count, dtype=np.float32)
+    n = layout.total_element_count
+    if out is None:
+        out = np.empty(n, dtype=np.float32)
+    elif (
+        out.shape != (n,)
+        or out.dtype != np.float32
+        or not out.flags["C_CONTIGUOUS"]
+        or not out.flags["WRITEABLE"]
+    ):
+        raise ValueError(
+            f"out must be a writeable C-contiguous float32 array of "
+            f"shape ({n},); got shape={out.shape}, dtype={out.dtype}, "
+            f"c_contiguous={out.flags['C_CONTIGUOUS']}, "
+            f"writeable={out.flags['WRITEABLE']}"
+        )
 
     cursor = 0
     for row in layout.assembly_table:

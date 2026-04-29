@@ -26,3 +26,17 @@ benchmarks:
     p99_seconds: 0.000010   # 10 us — spec target 5 us
   assemble_200_field_warm_numba:
     p99_seconds: 0.000050   # 50 us — spec target 10-20 us
+  # Step 6 — buffer pool. Class-based context manager (NOT
+  # @contextlib.contextmanager — that costs ~700 ns/call, swamps the
+  # np.empty savings the pool exists to capture). Measured hit-only
+  # median ~550 ns on WSL2; gate at 1500 ns to absorb CI noise on a
+  # sub-microsecond loop with high IQR variance. Pooled assemble must
+  # not regress past Step 5's headroom — gates match the Numba
+  # thresholds exactly so a regression in the pool path raises the same
+  # alarm.
+  pool_checkout_hit_only:
+    p99_seconds: 0.0000015   # 1.5 us — measured median ~550 ns
+  assemble_4_field_warm_pooled:
+    p99_seconds: 0.000010    # 10 us — must not regress past Step 5
+  assemble_200_field_warm_pooled:
+    p99_seconds: 0.000050    # 50 us — must not regress past Step 5
