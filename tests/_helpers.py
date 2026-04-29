@@ -1,9 +1,9 @@
 """Shared test helpers.
 
 Imported via ``from _helpers import ...`` thanks to ``pythonpath = ["tests"]``
-in ``pyproject.toml``. Keep this module dependency-light (numpy + pyforge
-only) so it can be used from unit, property, integration, and benchmark tests
-without dragging in pytest fixtures or Redis.
+in ``pyproject.toml``. Keep this module dependency-light (numpy + hypothesis +
+pyforge only) so it can be used from unit, property, integration, and
+benchmark tests without dragging in pytest fixtures or Redis.
 
 Conventions: top-of-file imports of POSIX-only modules require an explicit
 ``sys.platform`` skip in the importing test file. This module is itself
@@ -14,11 +14,13 @@ test modules.
 from __future__ import annotations
 
 import os
+import string
 import struct
 import uuid
 from typing import Any
 
 import numpy as np
+from hypothesis import strategies as st
 
 from pyforge._internal import posix_shm
 from pyforge._internal.crc import crc32_of_bytes
@@ -30,6 +32,7 @@ from pyforge.layout import (
 from pyforge.schema import (
     DTYPE_TO_NUMPY,
     DType,
+    FeatureField,
     FeatureSchema,
     compile_schema,
     compute_assembly_table,
@@ -129,3 +132,85 @@ def pack_row(
         out[byte_off : byte_off + byte_cnt] = raw
 
     return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# Hypothesis strategies — shared across property tests (Step 4 + Step 5).
+# Lifted here from tests/property/test_serving_properties.py so Step 5's
+# parity test can import them without cross-test-module fragility.
+# ---------------------------------------------------------------------------
+
+
+_NAME = st.text(
+    alphabet=string.ascii_lowercase + string.digits + "_",
+    min_size=1,
+    max_size=12,
+).filter(lambda s: s[0].isalpha())
+
+
+_DTYPE_OPTS = st.sampled_from(list(DType))
+
+
+# Shape: () (scalar) or (1..16,) or (1..4, 1..4). Keeps row sizes manageable.
+_SHAPE = st.one_of(
+    st.just(()),
+    st.tuples(st.integers(min_value=1, max_value=16)),
+    st.tuples(st.integers(min_value=1, max_value=4), st.integers(min_value=1, max_value=4)),
+)
+
+
+@st.composite
+def _field(draw: st.DrawFn) -> FeatureField:
+    return FeatureField(draw(_NAME), draw(_DTYPE_OPTS), draw(_SHAPE))
+
+
+@st.composite
+def field_list_strategy(draw: st.DrawFn) -> list[FeatureField]:
+    """Hypothesis strategy yielding a non-empty list of unique-named
+    :class:`FeatureField` objects (1-6 fields, dedup-by-name)."""
+    fields = draw(st.lists(_field(), min_size=1, max_size=6))
+    seen: set[str] = set()
+    deduped: list[FeatureField] = []
+    for f in fields:
+        if f.name not in seen:
+            seen.add(f.name)
+            deduped.append(f)
+    return deduped
+
+
+_SCHEMA_VERSION_COUNTER = [0]
+
+
+def build_dynamic_schema(field_list: list[FeatureField]) -> type[FeatureSchema]:
+    """Build a :class:`FeatureSchema` subclass at runtime from a generated
+    field list. Each call gets a unique class name so ``__init_subclass__``
+    is happy and the same field list can be re-used across examples without
+    conflict."""
+    _SCHEMA_VERSION_COUNTER[0] += 1
+    cls_name = f"_HypoSchema_{_SCHEMA_VERSION_COUNTER[0]}"
+    return type(
+        cls_name,
+        (FeatureSchema,),
+        {"version": 1, "fields": field_list},
+    )
+
+
+def random_value_for(field: FeatureField, rng: np.random.Generator) -> np.ndarray:
+    """A random ndarray matching ``field``'s dtype + shape (post-flatten size).
+
+    Uses moderate ranges so casts to float32 don't produce uninformative
+    results (e.g. int64 is restricted to ±2^40, well above float32's
+    24-bit mantissa for verifying lossy casts).
+    """
+    n = field.element_count
+    if field.dtype is DType.FLOAT32:
+        return rng.standard_normal(n).astype(np.float32)
+    if field.dtype is DType.FLOAT64:
+        return rng.standard_normal(n).astype(np.float64)
+    if field.dtype is DType.INT32:
+        return rng.integers(-(1 << 20), 1 << 20, size=n, dtype=np.int32)
+    if field.dtype is DType.INT64:
+        return rng.integers(-(1 << 40), 1 << 40, size=n, dtype=np.int64)
+    if field.dtype is DType.UINT8:
+        return rng.integers(0, 256, size=n, dtype=np.uint8)
+    raise AssertionError(f"unhandled dtype {field.dtype}")

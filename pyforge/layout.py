@@ -179,6 +179,15 @@ class SegmentLayout:
     # Sum of element_count across all fields.
     total_element_count: int
 
+    # Flat parallel arrays derived from assembly_table — used by Step 5's
+    # Numba kernel (pyforge.assembly._assemble_core). Pre-cast to int64/uint8
+    # at compute_layout time so the hot path doesn't pay astype overhead.
+    # Order matches assembly_table: declaration order. See ADR-004.
+    assembly_byte_offsets: np.ndarray[Any, np.dtype[np.int64]]
+    assembly_byte_counts: np.ndarray[Any, np.dtype[np.int64]]
+    assembly_dtype_codes: np.ndarray[Any, np.dtype[np.uint8]]
+    assembly_element_counts: np.ndarray[Any, np.dtype[np.int64]]
+
 
 def compute_layout(
     schema: type[FeatureSchema],
@@ -218,6 +227,7 @@ def compute_layout(
 
     total_size = _align_up(feature_rows_end, PAGE_SIZE)
 
+    asm = compute_assembly_table(schema)
     return SegmentLayout(
         capacity=capacity,
         slot_capacity=slot_capacity,
@@ -232,8 +242,17 @@ def compute_layout(
         feature_rows_bytes=feature_rows_bytes,
         total_size=total_size,
         row_offset_table=compute_row_offset_table(schema),
-        assembly_table=compute_assembly_table(schema),
+        assembly_table=asm,
         total_element_count=total_element_count(schema),
+        # Flat arrays for the Numba kernel. ``.astype(np.int64)`` allocates
+        # fresh contiguous arrays; ``dtype_code.copy()`` materializes a
+        # contiguous uint8 array (a structured-array field view is not
+        # guaranteed contiguous, but ``copy()`` ensures the C-contiguous
+        # layout the @njit signature requires).
+        assembly_byte_offsets=asm["byte_offset"].astype(np.int64),
+        assembly_byte_counts=asm["byte_count"].astype(np.int64),
+        assembly_dtype_codes=asm["dtype_code"].copy(),
+        assembly_element_counts=asm["element_count"].astype(np.int64),
     )
 
 

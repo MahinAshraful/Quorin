@@ -17,3 +17,12 @@ benchmarks:
     p99_seconds: 0.000050   # 50 us — spec target 10-30 us upper bound
   assemble_200_field_warm:
     p99_seconds: 0.001000   # 1 ms — spec target 100-500 us upper bound
+  # Step 5 — Numba assembly. 2x and 2.5x headroom over spec targets to
+  # absorb CI noise. The 4-field gate is loose because Python lookup
+  # (~3 us) sits in the budget; future Numba-fied lookup will close the
+  # gap. Crossover and cold-cache scenarios are committed but NOT gated
+  # (slow + noisy).
+  assemble_4_field_warm_numba:
+    p99_seconds: 0.000010   # 10 us — spec target 5 us
+  assemble_200_field_warm_numba:
+    p99_seconds: 0.000050   # 50 us — spec target 10-20 us
