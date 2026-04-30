@@ -73,3 +73,19 @@ benchmarks:
     p99_seconds: 0.00005     # 50 us — measured ~1.7 us median
   msgpack_pack_200_field:
     p99_seconds: 0.0001      # 100 us — measured ~7 us median
+  # Step 10 — WAL consumer + row_pack. row_pack is the consumer's hot CPU
+  # path; consolidated-Struct path validated empirically (ADR-009 §7).
+  # Measured: row_pack_50_field ~5.4 us median, row_pack_200_field ~12 us
+  # median, row_pack_200_scalar_only ~8 us median. Gate at 30 us / 100 us
+  # absorbs CI noise on shared loopback. Bench gate ratios match the
+  # numbers in ADR-009 §13.
+  row_pack_50_field:
+    p99_seconds: 0.00003     # 30 us — measured ~5 us median
+  row_pack_200_field:
+    p99_seconds: 0.00003     # 30 us — measured ~12 us median, includes 128-emb shaped
+  row_pack_200_scalar_only:
+    p99_seconds: 0.00003     # 30 us — measured ~8 us median, pure consolidated-Struct
+  consumer_apply_per_msg_50_field:
+    p99_seconds: 0.0001      # 100 us — measured ~10 us median (decode+pack+insert)
+  consumer_apply_per_msg_200_field:
+    p99_seconds: 0.0001      # 100 us — measured ~21 us median, includes 128-emb shaped

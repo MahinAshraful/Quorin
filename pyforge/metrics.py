@@ -115,6 +115,51 @@ wal_write_sync_consumer_lag_seconds = Histogram(
     registry=registry,
 )
 
+# WAL consumer (Step 10).
+wal_consumer_apply_total = Counter(
+    "pyforge_wal_consumer_apply_total",
+    "WAL consumer message apply outcomes.",
+    # ok = new insert; duplicate = existing entity_id overwritten;
+    # error = apply raised (msgpack/pack/insert/append); unknown_schema =
+    # schema name not in segments map (no ACK); bad_entity_id = entity_id
+    # not valid UTF-8 (no ACK).
+    labelnames=("outcome",),
+    registry=registry,
+)
+
+wal_consumer_batch_size = Histogram(
+    "pyforge_wal_consumer_batch_size",
+    "Number of messages per consumer apply batch (XREADGROUP COUNT bound).",
+    buckets=(1, 2, 5, 10, 20, 50, 100, 200, 500),
+    registry=registry,
+)
+
+wal_consumer_unknown_schema_total = Counter(
+    "pyforge_wal_consumer_unknown_schema_total",
+    "Messages received for a schema name not in the consumer's segments map.",
+    labelnames=("schema_name",),
+    registry=registry,
+)
+
+# Pending-ACK queue depth — depth grows when offline.flush is slow or
+# stuck. Operators alert on this exceeding `max_pending_ack`.
+wal_consumer_pending_ack_size = Gauge(
+    "pyforge_wal_consumer_pending_ack_size",
+    "Messages applied online but awaiting offline.flush() before XACK.",
+    registry=registry,
+)
+
+# Distribution of OfflineWriter.flush() durations. The consumer waits
+# synchronously for each flush before XACK; a slow flush is the most
+# likely operability surprise.
+wal_consumer_flush_seconds = Histogram(
+    "pyforge_wal_consumer_flush_seconds",
+    "Wall-clock duration of OfflineWriter.flush() calls.",
+    labelnames=("outcome",),  # ok | error
+    buckets=_WAL_LATENCY_BUCKETS,
+    registry=registry,
+)
+
 
 def start_metrics_server(port: int = 9100) -> None:
     """Expose the Pyforge registry on ``/metrics``.

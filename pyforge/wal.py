@@ -234,6 +234,18 @@ class WALProducer:
         The 1 ms floor is deliberate — tighter wastes Redis RTT cycles
         because the consumer cycle is 5-50 ms; looser bloats p50 by 10 ms.
 
+        **Signal semantics:** unblocks at **online-store** durability — the
+        consumer SETs the processed-key immediately after ``layout.insert``
+        succeeds, BEFORE the offline (Parquet) flush. Read-your-own-writes
+        from :func:`pyforge.serving.assemble` is the contract; offline
+        durability is a separate, eventually-consistent guarantee owned by
+        the consumer's deferred XACK. See ADR-009 §3 for the design.
+
+        The processed-key TTL is 86400 s (24h). Realistic ``timeout_ms``
+        values are 100 ms - 10 s; producers stuck polling for >24h indicate
+        a separate bug class (the producer process is wedged) and would see
+        the side-table entry expire mid-poll.
+
         Raises:
             WriteSyncTimeoutError: The consumer did not set the processed key
                 before the deadline. The XADD itself succeeded; the message
