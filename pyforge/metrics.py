@@ -71,6 +71,50 @@ pool_miss_total = Counter(
     registry=registry,
 )
 
+# WAL producer (Step 9).
+# Buckets cover the 100 us - 1 s range: write() p99 target is 2 ms but
+# write_sync() can run up to ~100 ms under steady consumer load.
+_WAL_LATENCY_BUCKETS = (
+    1e-4,
+    2e-4,
+    5e-4,
+    1e-3,
+    2e-3,
+    5e-3,
+    1e-2,
+    2e-2,
+    5e-2,
+    1e-1,
+    2e-1,
+    5e-1,
+    1.0,
+)
+
+wal_write_latency_seconds = Histogram(
+    "pyforge_wal_write_latency_seconds",
+    "Wall-clock latency of WAL producer writes (XADD round-trip + consumer ack for write_sync).",
+    labelnames=("mode",),  # async | sync
+    buckets=_WAL_LATENCY_BUCKETS,
+    registry=registry,
+)
+
+wal_write_total = Counter(
+    "pyforge_wal_write_total",
+    "WAL producer writes by mode and outcome.",
+    labelnames=("mode", "outcome"),  # mode: async|sync; outcome: ok|timeout|error
+    registry=registry,
+)
+
+# Lag observed by write_sync between XADD and the consumer's processed-key
+# write. Distinct from pyforge_wal_lag_seconds (a gauge sampled by the
+# consumer); this one measures the producer-observed round-trip.
+wal_write_sync_consumer_lag_seconds = Histogram(
+    "pyforge_wal_write_sync_consumer_lag_seconds",
+    "Time from WAL producer XADD to consumer processed-key set, observed by write_sync().",
+    buckets=_WAL_LATENCY_BUCKETS,
+    registry=registry,
+)
+
 
 def start_metrics_server(port: int = 9100) -> None:
     """Expose the Pyforge registry on ``/metrics``.

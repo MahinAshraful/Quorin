@@ -48,3 +48,28 @@ benchmarks:
     p99_seconds: 0.005       # 5 ms — N=1000 4-field; comparator is ~4 ms single calls
   assemble_batch_200_field_n1000:
     p99_seconds: 0.010       # 10 ms — N=1000 200-field; comparator is ~5 ms single calls
+  # Step 9 — WAL producer. Two layers of gates:
+  #   - wal_write_*: full producer wall-clock (RTT-dominated). Measured
+  #     median ~2.9 ms / max ~5 ms on WSL2 + Docker Desktop Redis with
+  #     appendfsync everysec. Gate at 8 ms p99 (~60% headroom over max)
+  #     so CI noise on docker-shared loopback doesn't flake. The
+  #     headline "<2 ms p99" target in ADR-008 is hardware-dependent; CI
+  #     just needs to detect "we got dramatically slower," not enforce
+  #     SLOs.
+  #   - sub-component gates isolate regressions in our code if a
+  #     wal_write_* drift appears.
+  # The 500 us pydantic gate is the documented escape-hatch trigger — if
+  # ever exceeded, ADR-008's parking-lot "swap to hand-rolled validator"
+  # opens. Currently measured at 16.7 us / 200 fields, so 30x under.
+  wal_write_50_field:
+    p99_seconds: 0.008       # 8 ms — RTT-dominated, measured ~3 ms median + headroom
+  wal_write_200_field:
+    p99_seconds: 0.008       # 8 ms — same; producer CPU adds <120 us
+  pydantic_validate_50_field:
+    p99_seconds: 0.0001      # 100 us — measured ~5 us median
+  pydantic_validate_200_field:
+    p99_seconds: 0.0005      # 500 us — escape-hatch trigger; measured ~17 us median
+  msgpack_pack_50_field:
+    p99_seconds: 0.00005     # 50 us — measured ~1.7 us median
+  msgpack_pack_200_field:
+    p99_seconds: 0.0001      # 100 us — measured ~7 us median
