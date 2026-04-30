@@ -190,6 +190,38 @@ offline_bytes_written_total = Counter(
     registry=registry,
 )
 
+# Read-side metrics for ParquetDatasetStore.read_point_in_time (Step 12).
+# offline_read_files_scanned was considered in the plan and dropped: PyArrow
+# does not expose post-prune file count cleanly, and offline_read_rows
+# already covers volume tracking.
+offline_read_seconds = Histogram(
+    "pyforge_offline_read_seconds",
+    "ParquetDatasetStore.read_point_in_time() wall time, by outcome.",
+    labelnames=("outcome",),  # ok | error
+    buckets=(
+        1e-3,
+        5e-3,
+        1e-2,
+        5e-2,
+        1e-1,
+        5e-1,
+        1.0,
+        2.0,
+        5.0,
+        10.0,
+        30.0,
+        60.0,
+    ),
+    registry=registry,
+)
+
+offline_read_rows = Histogram(
+    "pyforge_offline_read_rows",
+    "Rows returned per ParquetDatasetStore.read_point_in_time() call.",
+    buckets=(1, 10, 100, 1000, 10_000, 100_000, 1_000_000),
+    registry=registry,
+)
+
 
 def start_metrics_server(port: int = 9100) -> None:
     """Expose the Pyforge registry on ``/metrics``.

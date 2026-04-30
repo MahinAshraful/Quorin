@@ -113,3 +113,27 @@ benchmarks:
                               # matches ADR-010 section 8 prediction.
   arrow_schema_build_200_field:
     p99_seconds: 0.005       # 5 ms — cold plan build (measured ~258 us median, 1.2 ms max)
+  # Step 12 — point-in-time reader. Three gated benches; the 10M record
+  # bench is intentionally non-gated (PYFORGE_RUN_RECORD_BENCH=1 to run).
+  # Methodology mirrors Step 11: 4x measured WSL2 max, with the bench
+  # job catching 2x regressions, not enforcing SLOs. PyArrow 14 doesn't
+  # expose Table.join_asof; pyforge.offline._asof_join hand-rolls the
+  # primitive via numpy.searchsorted (ADR-011 §11). The dominant phase
+  # at 1M+ rows is the dataset.to_table load + dedup + sort, not the
+  # inner asof loop.
+  read_dataset_construction_only:
+    p99_seconds: 3.0         # 3 s — measured median 493-600 ms / max 506-725 ms
+                              # across two WSL2 hosts (filesystem-listing
+                              # variance is ~50%). Scales linearly with
+                              # fragment count (physical_schema scan in
+                              # _validate_dataset_uniform).
+  read_pit_1k_pairs_500k_rows_50_field:
+    p99_seconds: 12.0        # 12 s — 4x measured WSL2 max ~3.3 s (median
+                              # ~3.1 s). Dominated by dataset.to_table on
+                              # ~500k rows + dedup group_by + asof.
+  read_pit_10k_pairs_5m_rows_100_field:
+    p99_seconds: 60.0        # 60 s — extrapolated from the 500k bench
+                              # (10x rows + 10x queries). Verified by
+                              # measurement post-impl in Step 12 progress
+                              # notes; tightened in Step 16 if real numbers
+                              # are dramatically lower.

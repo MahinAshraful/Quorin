@@ -1,4 +1,4 @@
-"""Parquet dataset store for the WAL consumer (Step 11).
+"""Parquet dataset store for the WAL consumer (Step 11) + reader (Step 12).
 
 Implements :class:`ParquetDatasetStore`, an async ``OfflineWriter`` that
 satisfies the Protocol declared in
@@ -7,9 +7,17 @@ satisfies the Protocol declared in
 are hive-partitioned. Crash-safe by construction: a partial write either
 sits in ``_tmp/`` (GC'd at next ``__init__``) or never exists.
 
+Step 12 adds :meth:`ParquetDatasetStore.read_point_in_time` — a sync
+point-in-time reader. Hand-rolls the asof-join primitive via
+:func:`numpy.searchsorted` because PyArrow 14 does not expose
+``Table.join_asof`` in Python (the C++ Acero ``AsofJoinNodeOptions``
+exists but is unbound until PyArrow 16).
+
 See [`progress/step11_plan.md`](progress/step11_plan.md) and
 [`docs/adr/010-parquet-offline-store.md`](docs/adr/010-parquet-offline-store.md)
-for the full design lock and rationale.
+for the writer's full design lock; [`progress/step12_plan.md`](progress/step12_plan.md)
+and [`docs/adr/011-point-in-time-reads.md`](docs/adr/011-point-in-time-reads.md)
+for the reader's.
 """
 
 from __future__ import annotations
@@ -24,7 +32,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from pyforge._internal.arrow_schema import _arrow_plan_for, _ArrowPlan
@@ -33,6 +44,8 @@ from pyforge.metrics import (
     offline_files_written_total,
     offline_flush_rows,
     offline_flush_seconds,
+    offline_read_rows,
+    offline_read_seconds,
 )
 from pyforge.schema import FeatureSchema
 
@@ -111,6 +124,8 @@ class ParquetDatasetStore:
         "_h_flush_cancelled",
         "_h_flush_err",
         "_h_flush_ok",
+        "_h_read_err",
+        "_h_read_ok",
         "_include_msg_id",
         "_plans",
         "_tmp_dir",
@@ -139,6 +154,8 @@ class ParquetDatasetStore:
         self._h_flush_ok = offline_flush_seconds.labels(outcome="ok")
         self._h_flush_err = offline_flush_seconds.labels(outcome="error")
         self._h_flush_cancelled = offline_flush_seconds.labels(outcome="cancelled")
+        self._h_read_ok = offline_read_seconds.labels(outcome="ok")
+        self._h_read_err = offline_read_seconds.labels(outcome="error")
         # Counter children are populated lazily on first append per
         # schema (schema set is unbounded but small in practice).
         self._c_files_by_schema: dict[type[FeatureSchema], Any] = {}
@@ -358,3 +375,389 @@ class ParquetDatasetStore:
         the ``file.close()``-style "drain on close" idiom.
         """
         await self.flush()
+
+    # -- Step 12: point-in-time reader --------------------------------------
+
+    def _open_dataset(self, schema: type[FeatureSchema]) -> ds.Dataset | None:
+        """Open the hive-partitioned dataset for ``schema``.
+
+        Returns ``None`` if the schema directory does not exist OR
+        exists but contains no Parquet fragments (writer-constructed-
+        but-never-flushed case). Both are treated as "empty dataset"
+        for the empty-result short-circuit. Genuine data corruption
+        (``ArrowInvalid``) propagates as a bug signal — see ADR-011 §K.
+        """
+        schema_dir = self._base / f"schema={schema.__name__}"
+        try:
+            dataset = ds.dataset(schema_dir, format="parquet", partitioning="hive")
+        except FileNotFoundError:
+            return None
+        # ``schema_dir`` exists but the writer never flushed any rows —
+        # ``dataset.schema`` will be empty / inferred from nothing,
+        # which would trip the schema-divergence guard with a
+        # confusing message. Treat as empty.
+        if not any(True for _ in dataset.get_fragments()):
+            return None
+        return dataset
+
+    @staticmethod
+    def _validate_dataset_uniform(dataset: ds.Dataset) -> None:
+        """Surface a clearer error than ArrowInvalid for mixed include_msg_id state.
+
+        Scans every fragment's physical_schema (verified at 65 ms on
+        1000 fragments during pre-impl, well under the 100 ms
+        threshold). If we see both presence and absence of
+        ``msg_id_ms``/``msg_id_seq`` across the dataset, raise a
+        message that points at the typical cause (flag flipped
+        mid-deployment).
+        """
+        states: set[bool] = set()
+        for frag in dataset.get_fragments():
+            names = set(frag.physical_schema.names)
+            states.add("msg_id_ms" in names and "msg_id_seq" in names)
+            if len(states) > 1:
+                raise ValueError(
+                    "Dataset has files with mixed include_msg_id state "
+                    "(some have msg_id_ms/msg_id_seq columns, some don't). "
+                    "This typically happens when include_msg_id was flipped "
+                    "mid-deployment without a migration. Use a separate base "
+                    "directory per setting, or compact the dataset before "
+                    "reading."
+                )
+
+    def read_point_in_time(
+        self,
+        schema: type[FeatureSchema],
+        query_table: pa.Table,
+        *,
+        lookback_days: int = 30,
+    ) -> pa.Table:
+        """Return one feature row per query row, no future leakage, bounded staleness.
+
+        For each ``(entity_id, as_of_time)`` pair in ``query_table``,
+        return a row whose feature columns come from the most recent
+        write where BOTH:
+
+        - ``event_time_ns <= as_of_time`` (no future leak; inclusive
+          at the boundary)
+        - ``event_time_ns >= as_of_time - lookback_days * 86400e9``
+          (within per-query lookback; inclusive at lower edge)
+
+        If no feature row satisfies both, the feature columns are
+        null. Result rows are returned in **query input order**; all
+        ``query_table`` columns are preserved as the leading columns
+        of the result.
+
+        **Sync, by design.** Reads are 1-5 s of CPU + IO. Async callers
+        must wrap in :func:`asyncio.to_thread` — an async signature
+        with no awaits would mislead callers into believing the method
+        cooperates with the loop. See ADR-011 §10.
+
+        **Snapshot semantics.** Each call constructs a fresh
+        :class:`pyarrow.dataset.Dataset`; concurrent ``flush()``
+        activity may or may not be visible. Callers needing
+        read-after-write consistency must serialize. ADR-011 §F.
+
+        **Tested up to 10k queries.** Larger queries scale linearly
+        via the Python inner loop (~µs/iter); for 100k+ queries
+        consider sharding by entity_id across multiple calls.
+
+        Parameters
+        ----------
+        schema:
+            The :class:`FeatureSchema` subclass whose dataset partition
+            (``base/schema={name}/``) will be read.
+        query_table:
+            Required columns: ``entity_id`` (``pa.string()``),
+            ``as_of_time`` (``pa.int64()`` nanoseconds). Extra columns
+            (``label``, ``fold``, etc.) are preserved in the result in
+            input order. Column names must NOT collide with the result's
+            feature columns (``event_time_ns``, schema field names,
+            ``msg_id_ms``, ``msg_id_seq``).
+        lookback_days:
+            Per-query staleness ceiling AND partition-pruning window.
+            Must be positive.
+
+        Raises
+        ------
+        ValueError:
+            On invalid lookback, missing required query columns,
+            mismatched query column types, query column collision with
+            result feature columns, schema-divergence vs the on-disk
+            dataset (Step 15 evolution is the migration path), or
+            mixed-mode dataset detection.
+        """
+        if lookback_days <= 0:
+            raise ValueError(f"lookback_days must be positive, got {lookback_days}")
+
+        needed = {"entity_id", "as_of_time"}
+        missing = needed - set(query_table.column_names)
+        if missing:
+            raise ValueError(f"query_table missing required columns: {sorted(missing)}")
+
+        # Type validation. Mismatched types (pa.large_string,
+        # pa.timestamp, pa.int32) silently produce confusing
+        # searchsorted behavior; fail fast at the boundary.
+        eid_type = query_table.schema.field("entity_id").type
+        if eid_type != pa.string():
+            raise ValueError(f"query_table.entity_id must be pa.string(), got {eid_type}")
+        aot_type = query_table.schema.field("as_of_time").type
+        if aot_type != pa.int64():
+            raise ValueError(
+                f"query_table.as_of_time must be pa.int64() nanoseconds, got {aot_type}"
+            )
+
+        t0 = time.perf_counter()
+        try:
+            dataset = self._open_dataset(schema)
+            if dataset is None:
+                self._h_read_ok.observe(time.perf_counter() - t0)
+                return _empty_result_table(
+                    schema,
+                    query_table,
+                    include_msg_id=self._include_msg_id,
+                )
+
+            self._validate_dataset_uniform(dataset)
+
+            dataset_names = set(dataset.schema.names)
+            has_msg_id = "msg_id_ms" in dataset_names and "msg_id_seq" in dataset_names
+
+            # Schema divergence guard. KeyError mid-asof would be
+            # opaque; surface upfront with a Step 15 pointer.
+            missing_fields = [f.name for f in schema.fields if f.name not in dataset_names]
+            if missing_fields:
+                raise ValueError(
+                    f"Schema {schema.__name__!r} declares fields "
+                    f"{missing_fields} that are not present in the "
+                    f"on-disk dataset. This typically means the dataset "
+                    f"was written with a previous schema version. Step "
+                    f"15 schema evolution covers the migration path; "
+                    f"for now, either roll back the schema or rebuild "
+                    f"the dataset."
+                )
+
+            # Query column collision guard. entity_id is from the query
+            # by contract (single-source); as_of_time is query-only;
+            # the rest must not shadow result feature columns.
+            forbidden = {"event_time_ns"} | {f.name for f in schema.fields}
+            if has_msg_id:
+                forbidden |= {"msg_id_ms", "msg_id_seq"}
+            collisions = forbidden & set(query_table.column_names)
+            if collisions:
+                raise ValueError(
+                    f"query_table column names {sorted(collisions)} "
+                    f"collide with result feature columns. Rename them "
+                    f"in query_table before reading."
+                )
+
+            if len(query_table) == 0:
+                self._h_read_ok.observe(time.perf_counter() - t0)
+                return _empty_result_table(schema, query_table, include_msg_id=has_msg_id)
+
+            min_aot = pc.min(query_table["as_of_time"]).as_py()
+            max_aot = pc.max(query_table["as_of_time"]).as_py()
+            lookback_ns = lookback_days * _DAY_NS
+            win_start_ns = min_aot - lookback_ns
+            win_end_ns = max_aot
+
+            # event_date is the hive partition column (string) — the
+            # filter pushes down to file-listing skip. event_time_ns is
+            # the row column — row-group statistics may also prune,
+            # otherwise filtered post-load. The row filter is a
+            # throughput optimization, not a correctness gate; per-
+            # query lookback is enforced inside _asof_join.
+            filter_expr = (
+                (pc.field("event_date") >= _ns_to_date_str(win_start_ns))
+                & (pc.field("event_date") <= _ns_to_date_str(win_end_ns))
+                & (pc.field("event_time_ns") >= win_start_ns)
+                & (pc.field("event_time_ns") <= win_end_ns)
+            )
+            features = dataset.to_table(filter=filter_expr)
+
+            # Note: when ``features`` is empty after the filter, we do
+            # NOT short-circuit to ``_empty_result_table`` — that helper
+            # returns 0 rows, but the contract is "one row per query
+            # row." ``_asof_join`` handles the empty-features case
+            # cleanly: searchsorted on empty arrays returns 0 for every
+            # query, all result_indices stay -1, and the nullable take
+            # emits n_query rows of nulls.
+
+            features = _dedup_features(features, has_msg_id=has_msg_id)
+            result = _asof_join(
+                query_table,
+                features,
+                schema=schema,
+                has_msg_id=has_msg_id,
+                lookback_ns=lookback_ns,
+            )
+            offline_read_rows.observe(len(result))
+            self._h_read_ok.observe(time.perf_counter() - t0)
+            return result
+
+        except Exception:
+            self._h_read_err.observe(time.perf_counter() - t0)
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Step 12 module-level helpers — pure functions, no instance state.
+# ---------------------------------------------------------------------------
+
+
+def _ns_to_date_str(ns: int) -> str:
+    """``yyyy-mm-dd`` for the partition-prune filter.
+
+    Not day-quantum-cached: this is called twice per
+    ``read_point_in_time`` call (window start + end), not on a hot
+    loop, so the per-call ~3 us cost is amortized across the multi-
+    second read.
+    """
+    return datetime.fromtimestamp(ns / 1e9, tz=UTC).strftime("%Y-%m-%d")
+
+
+def _dedup_features(table: pa.Table, *, has_msg_id: bool) -> pa.Table:
+    """Drop duplicate rows by ``(msg_id_ms, msg_id_seq)`` (or natural key fallback).
+
+    When ``has_msg_id``, crash-replay duplicates are byte-identical
+    (the producer wrote the same payload both times into the WAL); any
+    tiebreaker is correct, ``min`` is the cheapest pyarrow
+    ``group_by`` aggregation. When falling back to
+    ``(entity_id, event_time_ns)``, ``max`` (last-row-wins) keeps the
+    most-recently-loaded row; users opting into ``include_msg_id=False``
+    accept that same-event_time conflation is silent.
+    """
+    n = len(table)
+    if n == 0:
+        return table
+    table = table.append_column("__idx", pa.array(np.arange(n, dtype=np.int64)))
+    if has_msg_id:
+        keys = ["msg_id_ms", "msg_id_seq"]
+        agg_func = "min"
+    else:
+        keys = ["entity_id", "event_time_ns"]
+        agg_func = "max"
+    grouped = table.group_by(keys).aggregate([("__idx", agg_func)])
+    indices = grouped.column(f"__idx_{agg_func}")
+    return table.take(indices).drop_columns(["__idx"])
+
+
+def _asof_join(
+    query: pa.Table,
+    features: pa.Table,
+    *,
+    schema: type[FeatureSchema],
+    has_msg_id: bool,
+    lookback_ns: int,
+) -> pa.Table:
+    """Hand-rolled per-entity asof join via ``numpy.searchsorted``.
+
+    PyArrow 14 doesn't expose ``Table.join_asof``; this is the
+    primitive. See ADR-011 §11.
+
+    The per-query lookback check inside the inner loop is THE Rev-3
+    CRITICAL-1 fix — the global row filter loads features in
+    ``[min(as_of_time) - lookback, max(as_of_time)]`` for throughput,
+    which is wider than each individual query's window when the query
+    spans multiple as_of_times. Without this check, a feature loaded
+    only because some other query's window covered it can match a
+    query whose own window ends earlier.
+    """
+    n_query = len(query)
+
+    # Sort with msg_id keys (when present) for deterministic asof
+    # tiebreaks. Backfill duplicates same-(entity_id, event_time_ns)
+    # by distinct msg_id are NOT crash-replay (ADR-010 §1); without
+    # the msg_id sort keys, take() picks whichever order PyArrow's
+    # take saw — non-deterministic across reads.
+    sort_keys: list[tuple[str, str]] = [
+        ("entity_id", "ascending"),
+        ("event_time_ns", "ascending"),
+    ]
+    if has_msg_id:
+        sort_keys.extend(
+            [
+                ("msg_id_ms", "ascending"),
+                ("msg_id_seq", "ascending"),
+            ]
+        )
+    features_sorted = features.sort_by(sort_keys)
+
+    eid_arr = features_sorted["entity_id"].to_numpy(zero_copy_only=False)
+    et_arr = features_sorted["event_time_ns"].to_numpy()
+    q_eid = query["entity_id"].to_numpy(zero_copy_only=False)
+    q_aot = query["as_of_time"].to_numpy()
+
+    lo_arr = np.searchsorted(eid_arr, q_eid, side="left")
+    hi_arr = np.searchsorted(eid_arr, q_eid, side="right")
+
+    result_indices = np.full(n_query, -1, dtype=np.int64)
+    for i in range(n_query):
+        lo = int(lo_arr[i])
+        hi = int(hi_arr[i])
+        if lo == hi:
+            continue  # entity not in features
+        # side="right" makes the upper bound INCLUSIVE
+        # (event_time_ns == as_of_time matches).
+        pos = int(np.searchsorted(et_arr[lo:hi], q_aot[i], side="right"))
+        if pos == 0:
+            continue  # all event_times in slice > as_of_time
+        candidate = lo + pos - 1
+        # Per-query lookback check (Rev-3 CRITICAL-1).
+        if int(et_arr[candidate]) < int(q_aot[i]) - lookback_ns:
+            continue  # candidate older than per-query lookback
+        result_indices[i] = candidate
+
+    matched_mask = result_indices >= 0
+    safe_indices = np.where(matched_mask, result_indices, 0).astype(np.int64)
+
+    # Single take with nullable indices — PyArrow emits null at masked
+    # positions (verified empirically pre-impl on PyArrow 14.0.2). No
+    # per-column pc.if_else needed.
+    indices_with_nulls = pa.array(safe_indices, type=pa.int64(), mask=~matched_mask)
+    features_aligned = features_sorted.take(indices_with_nulls)
+
+    # Assemble per ADR-011 §J: query columns first (in input order),
+    # then features columns. entity_id is single-source (from query);
+    # we don't include features.entity_id since it equals query's when
+    # matched and is null when not.
+    out_cols: dict[str, Any] = {col_name: query[col_name] for col_name in query.column_names}
+    out_cols["event_time_ns"] = features_aligned["event_time_ns"]
+    for f in schema.fields:
+        out_cols[f.name] = features_aligned[f.name]
+    if has_msg_id:
+        out_cols["msg_id_ms"] = features_aligned["msg_id_ms"]
+        out_cols["msg_id_seq"] = features_aligned["msg_id_seq"]
+    return pa.table(out_cols)
+
+
+def _empty_result_table(
+    schema: type[FeatureSchema],
+    query_table: pa.Table,
+    *,
+    include_msg_id: bool,
+) -> pa.Table:
+    """Build a "no features matched" result Table — one row per query row.
+
+    Used by the dataset-missing short-circuit. Returns
+    ``len(query_table)`` rows: query columns pass through unchanged;
+    feature columns are null arrays of length ``len(query_table)``.
+
+    When ``query_table`` itself is empty, this produces a 0-row result
+    naturally (no special case). The post-filter "zero features" case
+    is handled inside :func:`_asof_join` rather than via this helper —
+    nullable take on an empty source emits the right shape.
+    """
+    plan = _arrow_plan_for(schema, include_msg_id=include_msg_id)
+    n = len(query_table)
+    out_cols: dict[str, pa.Array | pa.ChunkedArray] = {
+        col_name: query_table[col_name] for col_name in query_table.column_names
+    }
+    arrow_schema = plan.arrow_schema
+    out_cols["event_time_ns"] = pa.nulls(n, type=pa.int64())
+    for f in schema.fields:
+        out_cols[f.name] = pa.nulls(n, type=arrow_schema.field(f.name).type)
+    if include_msg_id:
+        out_cols["msg_id_ms"] = pa.nulls(n, type=pa.int64())
+        out_cols["msg_id_seq"] = pa.nulls(n, type=pa.int32())
+    return pa.table(out_cols)

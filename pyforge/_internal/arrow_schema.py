@@ -51,12 +51,20 @@ _DTYPE_TO_ARROW: dict[DType, pa.DataType] = {
 # hot append path's pre-resolved aliases would silently land the user
 # value in a column the producer's wire payload doesn't fill. Hypothesis
 # discovered this with a schema field literally named "entity_id".
+#
+# ``event_date`` is reserved at the *partition* level — it's the hive
+# directory key derived from event_time_ns. A user field named
+# event_date would write per-row data to the file (typed as the user's
+# dtype), then PyArrow's dataset reader would try to merge it with the
+# partition column (always pa.string()) and fail with a deep-stack
+# ArrowTypeError at read time. Hypothesis P4 caught this in Step 12.
 _RESERVED_FIELD_NAMES: frozenset[str] = frozenset(
     {
         "entity_id",
         "event_time_ns",
         "msg_id_ms",
         "msg_id_seq",
+        "event_date",
     }
 )
 

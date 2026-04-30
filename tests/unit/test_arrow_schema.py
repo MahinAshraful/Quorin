@@ -231,7 +231,9 @@ def test_include_msg_id_true_and_false_are_independently_cached() -> None:
     assert (_Scalars, False) in _PLAN_CACHE
 
 
-@pytest.mark.parametrize("name", ["entity_id", "event_time_ns", "msg_id_ms", "msg_id_seq"])
+@pytest.mark.parametrize(
+    "name", ["entity_id", "event_time_ns", "msg_id_ms", "msg_id_seq", "event_date"]
+)
 def test_plan_rejects_schema_with_reserved_field_name(name: str) -> None:
     cls = type(
         f"_Reserved_{name}",

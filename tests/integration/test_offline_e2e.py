@@ -224,3 +224,106 @@ async def test_consumer_restart_does_not_double_write(
         f"expected {n} rows after restart, got {rows_after_second} — "
         "consumer is double-writing already-XACKed messages"
     )
+
+
+# ---------------------------------------------------------------------------
+# 3. Step 12 reader: full producer → consumer → reader pipeline.
+# ---------------------------------------------------------------------------
+
+
+async def test_full_pipeline_producer_to_reader(
+    redis_client: redis.Redis,
+    async_redis: redis.asyncio.Redis,
+    segment,
+    tmp_path: Path,
+) -> None:
+    """Producer → consumer → ParquetDatasetStore → read_point_in_time.
+
+    Writes 30 messages spread across 3 entities x 10 distinct
+    event_times. Queries each entity at multiple cutoff times. Asserts
+    every result matches the producer's last write before that cutoff
+    — leak-free, dedup-correct, against real Redis + real fsync + real
+    partition layout.
+    """
+    import pyarrow as pa
+
+    offline = ParquetDatasetStore(tmp_path)
+    producer = WALProducer(redis_client)
+    consumer = WALConsumer(
+        async_redis,
+        segments={"_IntE2E": segment},
+        offline=offline,
+        consumer_name="offline-reader-1",
+        block_ms=50,
+        flush_interval_seconds=0.5,
+        max_pending_ack=20,
+    )
+
+    # 3 entities, 10 event_times each (spread within a day so all land
+    # in one partition; reader exercise stays focused on asof, not
+    # partition pruning).
+    base_event_time = 1_700_000_000_000_000_000
+    write_log: list[tuple[str, int, float]] = []  # (eid, event_time_ns, expected_a)
+    for entity_idx in range(3):
+        eid = f"ent-{entity_idx}"
+        for t_idx in range(10):
+            event_time_ns = base_event_time + t_idx * 60_000_000_000  # 60s apart
+            i = entity_idx * 10 + t_idx
+            producer.write(
+                _IntE2E,
+                eid,
+                _values(i),
+                event_time_ns=event_time_ns,
+            )
+            write_log.append((eid, event_time_ns, _values(i)["a"]))
+
+    run_task = asyncio.create_task(consumer.run())
+    await asyncio.sleep(0)
+    try:
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if _pending_count(redis_client) == 0 and not consumer._pending_ack:
+                break
+            await asyncio.sleep(0.05)
+    finally:
+        await consumer.stop()
+        await asyncio.wait_for(run_task, timeout=5.0)
+
+    # Build a query mixing match cases: cutoff at boundary, in-between,
+    # before-everything, after-everything.
+    query_rows: list[tuple[str, int, float | None]] = []  # (eid, aot, expected_a or None)
+    for entity_idx in range(3):
+        eid = f"ent-{entity_idx}"
+        # Cutoff at the 5th event for this entity → expect the 5th
+        # entity write.
+        cutoff = base_event_time + 5 * 60_000_000_000
+        expected_a = _values(entity_idx * 10 + 5)["a"]
+        query_rows.append((eid, cutoff, expected_a))
+        # Cutoff before any event → null
+        query_rows.append((eid, base_event_time - 1_000_000_000, None))
+        # Cutoff after all events → latest (idx=9)
+        latest_cutoff = base_event_time + 100 * 60_000_000_000
+        latest_a = _values(entity_idx * 10 + 9)["a"]
+        query_rows.append((eid, latest_cutoff, latest_a))
+
+    query = pa.table(
+        {
+            "entity_id": pa.array([r[0] for r in query_rows], type=pa.string()),
+            "as_of_time": pa.array([r[1] for r in query_rows], type=pa.int64()),
+        }
+    )
+    result = offline.read_point_in_time(_IntE2E, query, lookback_days=30)
+    a_col = result["a"].to_pylist()
+    et_col = result["event_time_ns"].to_pylist()
+    for i, (_eid, aot, expected_a) in enumerate(query_rows):
+        if expected_a is None:
+            assert et_col[i] is None, f"row {i}: expected null, got event_time {et_col[i]}"
+            assert a_col[i] is None, f"row {i}: expected null, got a={a_col[i]}"
+        else:
+            assert a_col[i] == pytest.approx(expected_a), (
+                f"row {i}: expected a={expected_a}, got {a_col[i]}"
+            )
+            # Leak-free check: returned event_time must be <= cutoff.
+            assert et_col[i] is not None and et_col[i] <= aot, (
+                f"row {i}: event_time {et_col[i]} > cutoff {aot} (LEAK)"
+            )

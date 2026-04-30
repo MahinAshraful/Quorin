@@ -93,7 +93,7 @@ def _values_equal(actual: Any, expected: Any) -> bool:
     return actual == expected
 
 
-_RESERVED_NAMES = frozenset({"entity_id", "event_time_ns", "msg_id_ms", "msg_id_seq"})
+_RESERVED_NAMES = frozenset({"entity_id", "event_time_ns", "msg_id_ms", "msg_id_seq", "event_date"})
 
 
 @settings(
