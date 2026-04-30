@@ -160,6 +160,36 @@ wal_consumer_flush_seconds = Histogram(
     registry=registry,
 )
 
+# ParquetDatasetStore (Step 11).
+offline_flush_seconds = Histogram(
+    "pyforge_offline_flush_seconds",
+    "ParquetDatasetStore.flush() wall time, by outcome.",
+    labelnames=("outcome",),  # ok | error | cancelled
+    buckets=_WAL_LATENCY_BUCKETS,
+    registry=registry,
+)
+
+offline_flush_rows = Histogram(
+    "pyforge_offline_flush_rows",
+    "Rows written per ParquetDatasetStore.flush() call.",
+    buckets=(1, 10, 100, 500, 1000, 5000, 10000, 50000),
+    registry=registry,
+)
+
+offline_files_written_total = Counter(
+    "pyforge_offline_files_written_total",
+    "Parquet files written, labeled by schema.",
+    labelnames=("schema",),
+    registry=registry,
+)
+
+offline_bytes_written_total = Counter(
+    "pyforge_offline_bytes_written_total",
+    "Compressed Parquet bytes written, labeled by schema.",
+    labelnames=("schema",),
+    registry=registry,
+)
+
 
 def start_metrics_server(port: int = 9100) -> None:
     """Expose the Pyforge registry on ``/metrics``.

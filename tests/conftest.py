@@ -100,3 +100,15 @@ def _shm_test_isolation() -> Iterator[None]:
             gc_manager.stop_collector(join_timeout=1.0)
         with contextlib.suppress(Exception):
             gc_manager.unfreeze()
+
+    # ---- Arrow plan cache cleanup (Step 11) -------------------------------
+    # Belt-and-suspenders: tests in test_arrow_schema.py and
+    # test_offline_writer.py use local fixtures to clear the cache, but a
+    # crashed test can leak entries that confuse the next test's
+    # memoization-by-class-identity assertions. Wrapped in suppress() so a
+    # missing import (e.g. pyarrow not installed in some future stripped
+    # CI image) never breaks a passing test report.
+    with contextlib.suppress(Exception):
+        from pyforge._internal import arrow_schema
+
+        arrow_schema.clear_cache()

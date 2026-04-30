@@ -89,3 +89,27 @@ benchmarks:
     p99_seconds: 0.0001      # 100 us — measured ~10 us median (decode+pack+insert)
   consumer_apply_per_msg_200_field:
     p99_seconds: 0.0001      # 100 us — measured ~21 us median, includes 128-emb shaped
+  # Step 11 — ParquetDatasetStore. Bench job is 2x regression detection
+  # for append (e.g. someone reintroducing dict lookups), and absolute
+  # ceilings for flush calibrated to 4x measured WSL2 baseline (NOT 4x
+  # native theoretical) — Docker Desktop's WSL2 fsync routes through
+  # 9P/virtio-fs to NTFS, ~10x slower than native ext4. Native flush is
+  # ~100-150 ms at 10k rows x 200 fields with from_pydict dominating
+  # (ADR-010 section 8); WSL2 inflates that by 20-100 ms.
+  #
+  # NOTE: flush_10k_rows_50_field / flush_10k_rows_200_field gates are
+  # PLACEHOLDERS — set on first verification run to 4x measured WSL2
+  # p99 and recorded back into ADR-010 section 7.
+  append_per_msg_200_field:
+    p99_seconds: 0.00002     # 20 us — bench detects 2x regression (reintroduced
+                              # dict lookups). Measured median ~6 us on WSL2
+                              # (200 list.append x ~30 ns ≈ 6 us floor).
+  flush_10k_rows_50_field:
+    p99_seconds: 0.3         # 300 ms — 4x measured WSL2 max ~66 ms (median ~31 ms);
+                              # from_pydict + zstd + 2x fsync via Docker Desktop 9P.
+  flush_10k_rows_200_field:
+    p99_seconds: 0.6         # 600 ms — 4x measured WSL2 max ~123 ms (median ~114 ms);
+                              # from_pydict at 200 fields x 10k rows dominates (~80-150 ms),
+                              # matches ADR-010 section 8 prediction.
+  arrow_schema_build_200_field:
+    p99_seconds: 0.005       # 5 ms — cold plan build (measured ~258 us median, 1.2 ms max)
