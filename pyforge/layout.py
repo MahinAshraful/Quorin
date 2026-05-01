@@ -38,7 +38,7 @@ Three invariants the implementation enforces and every later module respects:
 from __future__ import annotations
 
 import struct
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
@@ -561,20 +561,6 @@ def _insert_into_empty_slot(
     slot_table[idx]["flags"] = OCCUPIED
 
     return True
-
-
-def insert_many(segment: Segment, rows: Iterable[tuple[str, bytes | memoryview]]) -> int:
-    """Bulk upsert. Returns the number of *new* inserts (excludes updates).
-
-    Step 13's hydration is the production caller. For Step 3 this is just
-    a tight Python loop over :func:`insert`; Step 13 may add specialized
-    fast paths if hydration becomes a bottleneck.
-    """
-    inserted = 0
-    for entity_id, row_data in rows:
-        if insert(segment, entity_id, row_data):
-            inserted += 1
-    return inserted
 
 
 def iterate_occupied(segment: Segment) -> Iterator[tuple[str, int]]:

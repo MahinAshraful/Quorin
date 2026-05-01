@@ -671,3 +671,247 @@ def test_deterministic_tiebreak_on_distinct_msg_ids_same_eid_event_time(
     # The asof picks the largest msg_id (2-0), which has x=2.0.
     assert r1["msg_id_ms"] == [2]
     assert r1["x"] == [pytest.approx(2.0)]
+
+
+# ---------------------------------------------------------------------------
+# 12. distinct_entity_ids (Step 13 public API).
+# ---------------------------------------------------------------------------
+
+
+def test_distinct_entity_ids_empty_dataset(tmp_path: Path) -> None:
+    """No schema dir; returns empty pa.Array."""
+    store = ParquetDatasetStore(tmp_path)
+    arr = store.distinct_entity_ids(_S)
+    assert isinstance(arr, pa.Array)
+    assert len(arr) == 0
+
+
+def test_distinct_entity_ids_single_partition(tmp_path: Path) -> None:
+    """One partition, 3 entities x 5 rows each; returns 3 unique IDs."""
+    store = ParquetDatasetStore(tmp_path)
+    rows: list[tuple[str, int, list[Any], bytes]] = []
+    for i in range(15):
+        eid = ["A", "B", "C"][i % 3]
+        rows.append((eid, 100 + i, [float(i), i * 10], f"{i}-0".encode()))
+    _populate(store, _S, rows)
+    arr = store.distinct_entity_ids(_S)
+    assert sorted(arr.to_pylist()) == ["A", "B", "C"]
+
+
+def test_distinct_entity_ids_cross_partition(tmp_path: Path) -> None:
+    """Multiple partitions across days; entities deduped across all."""
+    store = ParquetDatasetStore(tmp_path)
+    # Spread writes across 3 distinct event_dates so we get 3 partitions.
+    day1 = 1_700_000_000_000_000_000
+    day2 = day1 + _DAY_NS
+    day3 = day1 + 2 * _DAY_NS
+    _populate(
+        store,
+        _S,
+        [
+            ("A", day1, [1.0, 1], b"1-0"),
+            ("B", day1, [2.0, 2], b"2-0"),
+            ("A", day2, [3.0, 3], b"3-0"),  # repeat of A in different partition
+            ("C", day2, [4.0, 4], b"4-0"),
+            ("D", day3, [5.0, 5], b"5-0"),
+        ],
+    )
+    arr = store.distinct_entity_ids(_S)
+    assert sorted(arr.to_pylist()) == ["A", "B", "C", "D"]
+
+
+def test_distinct_entity_ids_mixed_msg_id_state_raises(tmp_path: Path) -> None:
+    """Two stores, one with include_msg_id=True and one False, writing into
+    the same base — the merged dataset has files in both states. Reader
+    must raise ValueError pointing at the mismatch."""
+    store_msg = ParquetDatasetStore(tmp_path, include_msg_id=True)
+    _populate(store_msg, _S, [("A", 100, [1.0, 1], b"1-0")])
+    store_nomsg = ParquetDatasetStore(tmp_path, include_msg_id=False)
+    _populate(store_nomsg, _S, [("B", 200, [2.0, 2], b"2-0")])
+
+    reader = ParquetDatasetStore(tmp_path)
+    with pytest.raises(ValueError, match="mixed include_msg_id"):
+        reader.distinct_entity_ids(_S)
+
+
+# ---------------------------------------------------------------------------
+# 13. latest_features (Step 13 hydration-side primitive).
+# ---------------------------------------------------------------------------
+
+
+def test_latest_features_empty_dataset(tmp_path: Path) -> None:
+    """No schema dir; returns 0-row table with correct schema."""
+    store = ParquetDatasetStore(tmp_path)
+    result = store.latest_features(_S)
+    assert len(result) == 0
+    # Result schema must have entity_id, event_time_ns, schema fields, msg_id_*.
+    names = result.schema.names
+    assert "entity_id" in names
+    assert "event_time_ns" in names
+    assert "x" in names
+    assert "y" in names
+    assert "msg_id_ms" in names
+    assert "msg_id_seq" in names
+
+
+def test_latest_features_single_entity_multiple_writes(tmp_path: Path) -> None:
+    """One entity with 5 writes at distinct event_times; result is one row at the largest."""
+    store = ParquetDatasetStore(tmp_path)
+    now_ns = 1_700_000_000_000_000_000
+    rows = []
+    for i in range(5):
+        # Spread within the lookback window — all within a few hours.
+        et = now_ns - i * 3600_000_000_000  # i hours ago
+        rows.append(("A", et, [float(i), i * 10], f"{i}-0".encode()))
+    _populate(store, _S, rows)
+
+    result = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns)
+    assert len(result) == 1
+    d = result.to_pydict()
+    # Latest write was i=0 (et = now_ns), so x=0.0, y=0.
+    assert d["entity_id"] == ["A"]
+    assert d["event_time_ns"] == [now_ns]
+    assert d["x"] == [pytest.approx(0.0)]
+
+
+def test_latest_features_multiple_entities(tmp_path: Path) -> None:
+    """3 entities x 5 writes each; result is 3 rows, each at the entity's max event_time."""
+    store = ParquetDatasetStore(tmp_path)
+    now_ns = 1_700_000_000_000_000_000
+    rows = []
+    for eid_idx, eid in enumerate(["A", "B", "C"]):
+        for i in range(5):
+            et = now_ns - (i + 1) * 3600_000_000_000  # 1-5 hours ago
+            rows.append((eid, et, [float(eid_idx * 10 + i), i], f"{eid_idx}{i}-0".encode()))
+    _populate(store, _S, rows)
+
+    result = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns)
+    assert len(result) == 3
+    # Each entity's latest is i=0 (1 hour ago).
+    by_eid = {row["entity_id"]: row for row in result.to_pylist()}
+    assert by_eid["A"]["x"] == pytest.approx(0.0)  # eid_idx=0, i=0
+    assert by_eid["B"]["x"] == pytest.approx(10.0)  # eid_idx=1, i=0
+    assert by_eid["C"]["x"] == pytest.approx(20.0)  # eid_idx=2, i=0
+
+
+def test_latest_features_lookback_excludes_old_writes(tmp_path: Path) -> None:
+    """Writes at t-40d, t-25d, t-5d; lookback_days=30; the t-40d write excluded."""
+    store = ParquetDatasetStore(tmp_path)
+    now_ns = 1_700_000_000_000_000_000
+    rows = [
+        ("A", now_ns - 40 * _DAY_NS, [1.0, 1], b"1-0"),  # outside lookback
+        ("A", now_ns - 25 * _DAY_NS, [2.0, 2], b"2-0"),  # within lookback
+        ("A", now_ns - 5 * _DAY_NS, [3.0, 3], b"3-0"),  # within lookback
+    ]
+    _populate(store, _S, rows)
+
+    result = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns)
+    assert len(result) == 1
+    d = result.to_pydict()
+    assert d["x"] == [pytest.approx(3.0)]  # the t-5d write
+
+
+def test_latest_features_all_outside_lookback(tmp_path: Path) -> None:
+    """All writes >30d old; result is 0 rows (drives Rev-2 CRITICAL-1 hydration fix)."""
+    store = ParquetDatasetStore(tmp_path)
+    now_ns = 1_700_000_000_000_000_000
+    rows = [
+        ("A", now_ns - 40 * _DAY_NS, [1.0, 1], b"1-0"),
+        ("B", now_ns - 50 * _DAY_NS, [2.0, 2], b"2-0"),
+    ]
+    _populate(store, _S, rows)
+
+    result = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns)
+    assert len(result) == 0
+
+
+def test_latest_features_deterministic_tiebreak_msg_id(tmp_path: Path) -> None:
+    """Two writes with same (entity_id, event_time_ns) distinct msg_ids:
+    latest_features picks max msg_id; second call across runs picks the same."""
+    store = ParquetDatasetStore(tmp_path)
+    now_ns = 1_700_000_000_000_000_000
+    et = now_ns - 5 * _DAY_NS
+    _populate(
+        store,
+        _S,
+        [
+            ("A", et, [1.0, 100], b"1-0"),
+            ("A", et, [2.0, 200], b"2-0"),  # same et, larger msg_id
+        ],
+    )
+
+    r1 = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns).to_pydict()
+    r2 = store.latest_features(_S, lookback_days=30, as_of_time_ns=now_ns).to_pydict()
+    assert r1 == r2, "two reads must be deterministic"
+    # The asof picks the largest msg_id (2-0), which has x=2.0.
+    assert r1["msg_id_ms"] == [2]
+    assert r1["x"] == [pytest.approx(2.0)]
+
+
+def test_latest_features_schema_divergence_raises(tmp_path: Path) -> None:
+    """Schema declares field absent from dataset; ValueError mentions Step 15.
+
+    Mirrors test_schema_divergence_raises (the read_point_in_time variant):
+    builds two same-``__name__`` classes so they share a partition dir, then
+    queries v2 against a v1-written dataset.
+    """
+    s_ver1 = type(
+        "_SLatestVer1",
+        (FeatureSchema,),
+        {"version": 1, "fields": [FeatureField("x", dtype.float32)]},
+    )
+    s_ver2 = type(
+        "_SLatestVer1",  # same __name__ -> same partition dir
+        (FeatureSchema,),
+        {
+            "version": 2,
+            "fields": [
+                FeatureField("x", dtype.float32),
+                FeatureField("z", dtype.int32),  # absent in v1 dataset
+            ],
+        },
+    )
+    store = ParquetDatasetStore(tmp_path)
+    _populate(store, s_ver1, [("A", 100, [1.0], b"1-0")])
+    with pytest.raises(ValueError, match="Step 15"):
+        store.latest_features(s_ver2)
+
+
+def test_latest_features_as_of_time_in_past_excludes_future_writes(tmp_path: Path) -> None:
+    """**Rev-3 CRITICAL-1**: as_of_time_ns in past must NOT leak future writes.
+
+    Without the upper-bound filter, queries against past timestamps would
+    pull in writes that happened *after* the snapshot — corrupting any
+    point-in-time replay use case.
+    """
+    store = ParquetDatasetStore(tmp_path)
+    # Two writes: t1 (in our "past") and t2 (in our "future").
+    base = 1_700_000_000_000_000_000
+    t1 = base
+    t2 = base + 5 * _DAY_NS  # 5 days after t1
+    _populate(
+        store,
+        _S,
+        [
+            ("A", t1, [1.0, 1], b"1-0"),
+            ("A", t2, [2.0, 2], b"2-0"),
+        ],
+    )
+
+    # Query as if we're at t1 + 1ns. Should only see the t1 write.
+    result = store.latest_features(_S, lookback_days=30, as_of_time_ns=t1 + 1)
+    assert len(result) == 1
+    d = result.to_pydict()
+    assert d["x"] == [pytest.approx(1.0)], (
+        "as_of_time_ns must enforce upper-bound: t2 write is in the future "
+        "relative to the snapshot and should be excluded"
+    )
+
+
+def test_latest_features_invalid_lookback_raises(tmp_path: Path) -> None:
+    """lookback_days <= 0 raises ValueError."""
+    store = ParquetDatasetStore(tmp_path)
+    with pytest.raises(ValueError, match="lookback_days"):
+        store.latest_features(_S, lookback_days=0)
+    with pytest.raises(ValueError, match="lookback_days"):
+        store.latest_features(_S, lookback_days=-5)

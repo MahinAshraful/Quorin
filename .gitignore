@@ -73,3 +73,7 @@ dev-*.bat
 
 # Personal session-context file for Claude Code — not shared.
 CLAUDE.md
+
+# Ad-hoc perf diagnostic scripts at repo root — not shared.
+# Real benchmarks live in benchmarks/ and are committed.
+bench_*.py

@@ -23,6 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 from pyforge._internal import posix_shm  # noqa: E402
 from pyforge._internal.hash_id import hash_entity_id  # noqa: E402
+from pyforge._internal.insert_kernel import insert_many  # noqa: E402
 from pyforge.layout import (  # noqa: E402
     DATA_REGION_OFFSET,
     DEFAULT_MAX_ID_BYTES,
@@ -38,7 +39,6 @@ from pyforge.layout import (  # noqa: E402
     compute_layout,
     initialize_segment_regions,
     insert,
-    insert_many,
     iterate_occupied,
     lookup,
     total_segment_size,
@@ -428,20 +428,235 @@ class TestSegmentInternals:
 
 
 class TestInsertMany:
-    def test_insert_many_returns_new_count(self, two_field_segment) -> None:
-        seg = two_field_segment
-        rows = [(f"e_{i}", _row_data(seg, i % 256)) for i in range(10)]
-        new_count = insert_many(seg, rows)
-        assert new_count == 10
+    """Step 13's columnar bulk insert via pa.Table.
 
-    def test_insert_many_counts_only_new(self, two_field_segment) -> None:
+    The signature changed from ``Iterable[(str, bytes)]`` to ``pa.Table``;
+    Numba kernel writes the slot table + row buffer in one pass. Tests
+    cover correctness against the single-``insert`` oracle (parity),
+    plus the validation surface.
+    """
+
+    def test_insert_many_table_basic(self, two_field_segment) -> None:
+        """50 entities into fresh segment (capacity 64); lookup each; verify all present."""
+        import pyarrow as pa
+
         seg = two_field_segment
-        rows1 = [(f"e_{i}", _row_data(seg)) for i in range(5)]
-        insert_many(seg, rows1)
-        # Re-insert same 5 plus 3 new
-        rows2 = [(f"e_{i}", _row_data(seg, 0xFF)) for i in range(8)]
-        new_count = insert_many(seg, rows2)
-        assert new_count == 3
+        n = 50  # < capacity 64
+        a_vals = [float(i) * 0.5 for i in range(n)]
+        b_vals = [i for i in range(n)]
+        ids = [f"user-{i:04d}" for i in range(n)]
+        table = pa.table(
+            {
+                "entity_id": pa.array(ids, type=pa.string()),
+                "a": pa.array(a_vals, type=pa.float32()),
+                "b": pa.array(b_vals, type=pa.int32()),
+            }
+        )
+
+        inserted = insert_many(seg, table)
+        assert inserted == n
+
+        for eid in ids:
+            offset = lookup(seg, eid)
+            assert offset is not None, f"{eid!r} not found"
+
+    def test_insert_many_byte_identical_to_insert_loop(self) -> None:
+        """Bulk path produces a byte-identical segment to a single-insert loop.
+
+        This is the load-bearing parity check for the Numba write kernel —
+        any divergence here means the kernel is writing different bytes than
+        the single-row primitive. Locked by the test, not just convention.
+        """
+        import pyarrow as pa
+
+        # Build matching test data once; insert via two paths into two segments.
+        n = 25  # small enough to be fast; > slot probe distances
+        a_vals = [float(i) for i in range(n)]
+        b_vals = [i * 100 for i in range(n)]
+        ids = [f"user-{i:03d}" for i in range(n)]
+
+        seg_loop = _make_segment(_TwoFieldSchema, capacity=64)
+        seg_bulk = _make_segment(_TwoFieldSchema, capacity=64)
+        try:
+            # Path 1: single-insert loop. Pack each row using the layout's
+            # actual per-field byte offsets (cache-line-aligned, NOT
+            # contiguous) so we match the bulk path's scatter.
+            a_off = int(seg_loop.layout.assembly_byte_offsets[0])
+            b_off = int(seg_loop.layout.assembly_byte_offsets[1])
+            row_size = seg_loop.layout.row_size
+            for i, eid in enumerate(ids):
+                row = bytearray(row_size)
+                struct.pack_into("<f", row, a_off, a_vals[i])
+                struct.pack_into("<i", row, b_off, b_vals[i])
+                insert(seg_loop, eid, bytes(row))
+
+            # Path 2: bulk insert via pa.Table.
+            table = pa.table(
+                {
+                    "entity_id": pa.array(ids, type=pa.string()),
+                    "a": pa.array(a_vals, type=pa.float32()),
+                    "b": pa.array(b_vals, type=pa.int32()),
+                }
+            )
+            insert_many(seg_bulk, table)
+
+            # Compare the entire segment byte-by-byte.
+            buf_loop = bytes(seg_loop.handle.buf[: seg_loop.layout.total_size])
+            buf_bulk = bytes(seg_bulk.handle.buf[: seg_bulk.layout.total_size])
+            assert buf_loop == buf_bulk, (
+                "bulk insert_many produced different bytes than the "
+                "single-insert oracle — kernel divergence"
+            )
+        finally:
+            _release(seg_loop)
+            _release(seg_bulk)
+
+    def test_insert_many_capacity_exceeded(self) -> None:
+        """Table larger than capacity raises CapacityExceededError."""
+        import pyarrow as pa
+
+        seg = _make_segment(_TwoFieldSchema, capacity=8)
+        try:
+            n = 16  # > capacity
+            table = pa.table(
+                {
+                    "entity_id": pa.array([f"e-{i}" for i in range(n)], type=pa.string()),
+                    "a": pa.array([float(i) for i in range(n)], type=pa.float32()),
+                    "b": pa.array([i for i in range(n)], type=pa.int32()),
+                }
+            )
+            with pytest.raises(CapacityExceededError):
+                insert_many(seg, table)
+        finally:
+            _release(seg)
+
+    def test_insert_many_string_pool_exhausted(self) -> None:
+        """Long entity IDs that overflow max_id_bytes raise StringPoolExhaustedError."""
+        import pyarrow as pa
+
+        seg = _make_segment(_TwoFieldSchema, capacity=8, max_id_bytes=16)
+        try:
+            # 32-byte ID > 16-byte max_id_bytes.
+            long_id = "x" * 32
+            table = pa.table(
+                {
+                    "entity_id": pa.array([long_id], type=pa.string()),
+                    "a": pa.array([1.0], type=pa.float32()),
+                    "b": pa.array([1], type=pa.int32()),
+                }
+            )
+            with pytest.raises(StringPoolExhaustedError):
+                insert_many(seg, table)
+        finally:
+            _release(seg)
+
+    def test_insert_many_missing_entity_id_column(self, two_field_segment) -> None:
+        import pyarrow as pa
+
+        seg = two_field_segment
+        table = pa.table(
+            {
+                "a": pa.array([1.0], type=pa.float32()),
+                "b": pa.array([1], type=pa.int32()),
+            }
+        )
+        with pytest.raises(ValueError, match="entity_id"):
+            insert_many(seg, table)
+
+    def test_insert_many_missing_schema_field_column(self, two_field_segment) -> None:
+        import pyarrow as pa
+
+        seg = two_field_segment
+        # Missing 'b'.
+        table = pa.table(
+            {
+                "entity_id": pa.array(["e-1"], type=pa.string()),
+                "a": pa.array([1.0], type=pa.float32()),
+            }
+        )
+        with pytest.raises(ValueError, match="missing schema columns"):
+            insert_many(seg, table)
+
+    def test_insert_many_extra_columns_ignored(self, two_field_segment) -> None:
+        """event_time_ns / msg_id_* / label / fold etc. pass through cleanly."""
+        import pyarrow as pa
+
+        seg = two_field_segment
+        table = pa.table(
+            {
+                "entity_id": pa.array(["e-1", "e-2"], type=pa.string()),
+                "a": pa.array([1.0, 2.0], type=pa.float32()),
+                "b": pa.array([10, 20], type=pa.int32()),
+                "event_time_ns": pa.array([100, 200], type=pa.int64()),
+                "msg_id_ms": pa.array([1, 2], type=pa.int64()),
+                "label": pa.array([0, 1], type=pa.int32()),
+                "fold": pa.array(["train", "val"], type=pa.string()),
+            }
+        )
+        n = insert_many(seg, table)
+        assert n == 2
+        assert lookup(seg, "e-1") is not None
+        assert lookup(seg, "e-2") is not None
+
+    def test_insert_many_empty_table(self, two_field_segment) -> None:
+        """Zero rows: no-op; segment unchanged."""
+        import pyarrow as pa
+
+        seg = two_field_segment
+        table = pa.table(
+            {
+                "entity_id": pa.array([], type=pa.string()),
+                "a": pa.array([], type=pa.float32()),
+                "b": pa.array([], type=pa.int32()),
+            }
+        )
+        n = insert_many(seg, table)
+        assert n == 0
+        # Segment is untouched — slot table fully empty.
+        slot_table = _slot_table_view(seg.handle.buf, seg.layout)
+        occupied = int((slot_table["flags"] == OCCUPIED).sum())
+        assert occupied == 0
+
+    def test_insert_many_dtype_mismatch_coerces(self, two_field_segment) -> None:
+        """Float64 column for float32 schema field: coerces correctly."""
+        import pyarrow as pa
+
+        seg = two_field_segment
+        # 'a' is float32 in schema; pass float64 — should astype to float32.
+        table = pa.table(
+            {
+                "entity_id": pa.array(["e-1"], type=pa.string()),
+                "a": pa.array([1.5], type=pa.float64()),  # mismatched dtype
+                "b": pa.array([10], type=pa.int32()),
+            }
+        )
+        n = insert_many(seg, table)
+        assert n == 1
+        assert lookup(seg, "e-1") is not None
+
+    def test_insert_many_rejects_populated_segment(self, two_field_segment) -> None:
+        """Calling on a segment with prior inserts raises ValueError.
+
+        The kernel's "find first EMPTY" probe assumes all slots are EMPTY;
+        without this validation, calling on a populated segment produces
+        silent corruption (kernel writes past existing OCCUPIED slots).
+        """
+        import pyarrow as pa
+
+        seg = two_field_segment
+        # Populate via single-insert.
+        insert(seg, "pre-existing", _row_data(seg))
+
+        # Now attempt bulk insert on the populated segment.
+        table = pa.table(
+            {
+                "entity_id": pa.array(["new-1"], type=pa.string()),
+                "a": pa.array([1.0], type=pa.float32()),
+                "b": pa.array([10], type=pa.int32()),
+            }
+        )
+        with pytest.raises(ValueError, match="fresh segment"):
+            insert_many(seg, table)
 
 
 # ---------------------------------------------------------------------------

@@ -599,6 +599,148 @@ class ParquetDatasetStore:
             self._h_read_err.observe(time.perf_counter() - t0)
             raise
 
+    # -- Step 13: hydration-side primitives --------------------------------
+
+    def latest_features(
+        self,
+        schema: type[FeatureSchema],
+        *,
+        lookback_days: int = 30,
+        as_of_time_ns: int | None = None,
+    ) -> pa.Table:
+        """Return the latest feature row per entity within ``lookback_days``.
+
+        Result schema mirrors the source dataset's columns (``entity_id``,
+        ``event_time_ns``, schema fields, optionally ``msg_id_*``). One row
+        per entity that has at least one write within the window
+        ``[snapshot_ns - lookback_days * 86400e9, snapshot_ns]`` where
+        ``snapshot_ns = as_of_time_ns or time.time_ns()``.
+
+        **Result row order is not guaranteed.** PyArrow's ``group_by`` output
+        order is implementation-defined. Hydration's slot table is
+        hash-indexed and order-agnostic; other callers needing stable order
+        should sort post-call.
+
+        Used by Step 13 hydration. For the general
+        "as-of-arbitrary-timestamps per query row" case, use
+        :meth:`read_point_in_time`. Why a separate primitive: hydration's
+        question is simpler ("latest per entity within lookback"), so we
+        skip ``read_point_in_time``'s per-query searchsorted machinery and
+        Python inner loop. Saves ~3-4 s at 1M rows; eliminates the
+        separate :meth:`distinct_entity_ids` scan that the
+        ``read_point_in_time`` path would otherwise need.
+
+        Parameters
+        ----------
+        schema:
+            Schema whose dataset partition (``base/schema={name}/``) will
+            be read.
+        lookback_days:
+            Per-query staleness ceiling AND partition-pruning window.
+            Must be positive.
+        as_of_time_ns:
+            Snapshot timestamp; ``time.time_ns()`` if ``None``. Useful
+            for deterministic tests and replaying past states.
+
+        Raises
+        ------
+        ValueError:
+            On invalid ``lookback_days``, schema-divergence vs the
+            on-disk dataset (Step 15 evolution is the migration path),
+            or mixed-mode dataset detection.
+        """
+        if lookback_days <= 0:
+            raise ValueError(f"lookback_days must be positive, got {lookback_days}")
+
+        t0 = time.perf_counter()
+        try:
+            dataset = self._open_dataset(schema)
+            if dataset is None:
+                self._h_read_ok.observe(time.perf_counter() - t0)
+                return _empty_features_table(schema, include_msg_id=self._include_msg_id)
+            self._validate_dataset_uniform(dataset)
+
+            dataset_names = set(dataset.schema.names)
+            has_msg_id = "msg_id_ms" in dataset_names and "msg_id_seq" in dataset_names
+
+            # Schema divergence guard (mirrors read_point_in_time §L).
+            missing = [f.name for f in schema.fields if f.name not in dataset_names]
+            if missing:
+                raise ValueError(
+                    f"Schema {schema.__name__!r} declares fields {missing} "
+                    f"that are not present in the dataset. Step 15 schema "
+                    f"evolution is the migration path; rebuild or roll back."
+                )
+
+            snapshot_ns = as_of_time_ns if as_of_time_ns is not None else time.time_ns()
+            win_start_ns = snapshot_ns - lookback_days * _DAY_NS
+            win_end_ns = snapshot_ns
+            # Upper bound is required for past-replay correctness: without
+            # it, ``as_of_time_ns`` set to a past timestamp would leak future
+            # writes via the unbounded filter.
+            filter_expr = (
+                (pc.field("event_date") >= _ns_to_date_str(win_start_ns))
+                & (pc.field("event_date") <= _ns_to_date_str(win_end_ns))
+                & (pc.field("event_time_ns") >= win_start_ns)
+                & (pc.field("event_time_ns") <= win_end_ns)
+            )
+            features = dataset.to_table(filter=filter_expr)
+            if len(features) == 0:
+                self._h_read_ok.observe(time.perf_counter() - t0)
+                return _empty_features_table(schema, include_msg_id=has_msg_id)
+
+            # Sort so that __idx_max within an entity-group corresponds to
+            # the row with max event_time_ns (with msg_id-extended tiebreak
+            # for the backfill case — same determinism contract as
+            # read_point_in_time).
+            sort_keys: list[tuple[str, str]] = [
+                ("entity_id", "ascending"),
+                ("event_time_ns", "ascending"),
+            ]
+            if has_msg_id:
+                sort_keys.extend(
+                    [
+                        ("msg_id_ms", "ascending"),
+                        ("msg_id_seq", "ascending"),
+                    ]
+                )
+            features = features.sort_by(sort_keys)
+            features = features.append_column(
+                "__idx", pa.array(np.arange(len(features), dtype=np.int64))
+            )
+            grouped = features.group_by("entity_id").aggregate([("__idx", "max")])
+            result = features.take(grouped.column("__idx_max")).drop_columns(["__idx"])
+
+            offline_read_rows.observe(len(result))
+            self._h_read_ok.observe(time.perf_counter() - t0)
+            return result
+        except Exception:
+            self._h_read_err.observe(time.perf_counter() - t0)
+            raise
+
+    def distinct_entity_ids(self, schema: type[FeatureSchema]) -> pa.Array:
+        """Return the unique entity IDs across the entire dataset for ``schema``.
+
+        Reads only the ``entity_id`` column via PyArrow's column projection;
+        deduplicates via ``pc.unique`` (C-vectorized over the dictionary
+        column). Empty array if the schema directory does not exist.
+
+        Memory note: at 100M rows, the entity_id column scan loads ~4 GB
+        into memory (UUID strings x dictionary overhead). Sharding by
+        schema is the escape hatch for very-large datasets.
+
+        Hydration (Step 13) does NOT use this method — it uses
+        :meth:`latest_features`, where ``group_by`` emits unique entities
+        as a side effect (one fewer dataset scan). This method ships as a
+        public API for ad-hoc operator queries.
+        """
+        dataset = self._open_dataset(schema)
+        if dataset is None:
+            return pa.array([], type=pa.string())
+        self._validate_dataset_uniform(dataset)
+        table = dataset.to_table(columns=["entity_id"])
+        return pc.unique(table["entity_id"])
+
 
 # ---------------------------------------------------------------------------
 # Step 12 module-level helpers — pure functions, no instance state.
@@ -760,4 +902,32 @@ def _empty_result_table(
     if include_msg_id:
         out_cols["msg_id_ms"] = pa.nulls(n, type=pa.int64())
         out_cols["msg_id_seq"] = pa.nulls(n, type=pa.int32())
+    return pa.table(out_cols)
+
+
+def _empty_features_table(
+    schema: type[FeatureSchema],
+    *,
+    include_msg_id: bool,
+) -> pa.Table:
+    """Build a 0-row "features-only" Table matching the dataset schema.
+
+    Used by :meth:`ParquetDatasetStore.latest_features` for the
+    dataset-missing and post-filter-zero-rows cases. Unlike
+    :func:`_empty_result_table` (which preserves query columns from a
+    point-in-time read's ``query_table``), this helper has no query
+    context — it just emits the dataset's natural columns at zero
+    length.
+    """
+    plan = _arrow_plan_for(schema, include_msg_id=include_msg_id)
+    arrow_schema = plan.arrow_schema
+    out_cols: dict[str, pa.Array] = {
+        "entity_id": pa.array([], type=pa.string()),
+        "event_time_ns": pa.array([], type=pa.int64()),
+    }
+    for f in schema.fields:
+        out_cols[f.name] = pa.array([], type=arrow_schema.field(f.name).type)
+    if include_msg_id:
+        out_cols["msg_id_ms"] = pa.array([], type=pa.int64())
+        out_cols["msg_id_seq"] = pa.array([], type=pa.int32())
     return pa.table(out_cols)

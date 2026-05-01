@@ -14,6 +14,7 @@ every persisted segment, so the pinned-hash test in
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Buffer
 
 
 def hash_entity_id(entity_id: str) -> int:
@@ -28,6 +29,26 @@ def hash_entity_id(entity_id: str) -> int:
     """
     return int.from_bytes(
         hashlib.blake2b(entity_id.encode("utf-8"), digest_size=8).digest(),
+        byteorder="little",
+        signed=False,
+    )
+
+
+def hash_entity_id_bytes(buf: Buffer) -> int:
+    """Bytes-input variant of :func:`hash_entity_id`.
+
+    Accepts any buffer-protocol object (``bytes``, ``bytearray``,
+    ``memoryview``, numpy ``uint8`` array slices) without the
+    ``.encode("utf-8")`` round-trip that :func:`hash_entity_id` makes
+    internally. Used by Step 13's hydration bulk-hash loop, where the
+    encoded UTF-8 bytes are already in hand from the Arrow string buffer.
+
+    Identical 8-byte little-endian uint64 output to
+    ``hash_entity_id(s)`` for any ``s`` such that ``s.encode("utf-8") == buf``.
+    Locked by ``tests/unit/test_hash_id.py::test_hash_entity_id_bytes_matches_str_variant``.
+    """
+    return int.from_bytes(
+        hashlib.blake2b(buf, digest_size=8).digest(),
         byteorder="little",
         signed=False,
     )
