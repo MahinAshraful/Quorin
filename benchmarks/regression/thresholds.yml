@@ -137,3 +137,49 @@ benchmarks:
                               # measurement post-impl in Step 12 progress
                               # notes; tightened in Step 16 if real numbers
                               # are dramatically lower.
+  # Step 13 — Hydration. Methodology change vs Steps 11/12: gates are
+  # set at NATIVE-LINUX targets, not "4x WSL2 measured". CI runs on
+  # Ubuntu 24.04 (native Linux); that's where the gates actually
+  # block. Steps 11/12 gates use the older "4x WSL2 measured"
+  # methodology and are loose by ~4-6x vs the native target — Step
+  # 16 should retroactively tighten:
+  #   - flush_10k_rows_200_field: 0.6s -> ~0.15-0.2s
+  #   - read_pit_1k_pairs_500k_rows_50_field: 12s -> ~3-4s
+  # DO NOT tighten in Commit B — out of scope.
+  #
+  # WSL2 dev runs may exceed these gates due to Docker Desktop 9P +
+  # virtio-fs cold-page-fault overhead (~4-6x slower than native ext4
+  # on /dev/shm cold writes — see CLAUDE.md §8). For dev-loop
+  # ergonomics, dev users running benches on WSL2 should mentally
+  # allow up to 4x the gate; if exceeded above 4x even on WSL2,
+  # that's a real regression no matter the platform.
+  #
+  # Enforcement: the workflow currently loads thresholds.yml as a
+  # smoke test (prints the dict) but does NOT gate on values. Step 16
+  # (per pyforge_build_steps.md "Step 16 — Benchmarks and Flamegraphs"
+  # / "Regression guard in CI") wires the actual evaluator with WSL2
+  # detection and the two-tier discipline. Until then, regressions
+  # are caught by manual inspection of the benchmark JSON output.
+  hydrate_10k_50_field_smoke:
+    p99_seconds: 1.0         # Smoke variant — always-on (no env gate).
+                              # Native target ~0.05-0.2s. 1s gate is
+                              # ~5-20x the upper bound; catches order-
+                              # of-magnitude regressions only. Finer
+                              # detection requires PYFORGE_RUN_LARGE_BENCH=1
+                              # on the 100k/1M scales. Mediocre by design;
+                              # cheap to run.
+  hydrate_100k_50_field:
+    p99_seconds: 8.0         # Native target ~0.5-2s. 8s gate gives
+                              # 4x headroom for hardware drift but blocks
+                              # the "doubled" regression class. WSL2 dev
+                              # runs may hit 5-7s — within tolerance but
+                              # flag-worthy. Env-gated (PYFORGE_RUN_LARGE_BENCH=1).
+  hydrate_1m_200_field:
+    p99_seconds: 45.0        # Native target ~5-15s (per CLAUDE.md §8
+                              # partial-commit perf findings). 45s gate
+                              # is ~3x the upper bound; less headroom
+                              # than 100k because the larger scale's
+                              # cold-page-fault floor is more variable.
+                              # Env-gated (PYFORGE_RUN_LARGE_BENCH=1).
+  # No gate for hydrate_10m_200_field_record — capacity-planning only,
+  # PYFORGE_RUN_RECORD_BENCH=1.
