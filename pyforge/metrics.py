@@ -264,6 +264,71 @@ wal_consumer_liveness_refresh_failures = Counter(
     registry=registry,
 )
 
+# Heartbeat producer (Step 14).
+# Per-process daemon thread writes pyforge:heartbeats {pid} -> "{create_ns}:{wall_ns}"
+# every HEARTBEAT_INTERVAL_SECONDS. Watchdog reads the hash and detects dead PIDs
+# via consecutive missed advances of wall_ns. See pyforge._internal.heartbeat.
+heartbeat_writes_total = Counter(
+    "pyforge_heartbeat_writes_total",
+    "Heartbeat HSET attempts by outcome.",
+    labelnames=("outcome",),  # ok | redis_error
+    registry=registry,
+)
+
+heartbeat_age_seconds = Gauge(
+    "pyforge_heartbeat_age_seconds",
+    "Seconds since the heartbeat thread's last successful HSET. "
+    "Climbs above HEARTBEAT_INTERVAL_SECONDS during Redis outages.",
+    registry=registry,
+)
+
+# Watchdog (Step 14). Counters/histograms fed by WatchdogState.run_one_tick().
+watchdog_dead_pids_total = Counter(
+    "pyforge_watchdog_dead_pids_total",
+    "PIDs declared dead by the watchdog (cross-check confirmed dead).",
+    registry=registry,
+)
+
+watchdog_segments_unlinked_total = Counter(
+    "pyforge_watchdog_segments_unlinked_total",
+    "Segments unlinked by the watchdog, by source path.",
+    labelnames=("path",),  # dead_pid | cleanup_queue
+    registry=registry,
+)
+
+watchdog_tick_seconds = Histogram(
+    "pyforge_watchdog_tick_seconds",
+    "Wall-clock duration of a single watchdog tick (HGETALL + cleanup + drain).",
+    buckets=(1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1, 5e-1, 1.0, 5.0),
+    registry=registry,
+)
+
+watchdog_cross_check_unverifiable_total = Counter(
+    "pyforge_watchdog_cross_check_unverifiable_total",
+    "Cross-check could not verify liveness; conservative skip (do NOT unlink). "
+    "Reasons: access_denied (psutil.AccessDenied — typically cross-UID without "
+    "CAP_SYS_PTRACE), zombie (psutil.ZombieProcess).",
+    labelnames=("reason",),  # access_denied | zombie
+    registry=registry,
+)
+
+watchdog_malformed_heartbeat_total = Counter(
+    "pyforge_watchdog_malformed_heartbeat_total",
+    "Heartbeat hash entries that failed to parse as '{create_ns}:{wall_ns}'. "
+    "Likely cause: operator HSET to pyforge:heartbeats with a non-conforming "
+    "value. Defensive skip — tick proceeds.",
+    registry=registry,
+)
+
+watchdog_pid_reuse_abort_total = Counter(
+    "pyforge_watchdog_pid_reuse_abort_total",
+    "Dead-PID cleanup Lua aborted because heartbeats[pid].create_time mismatched "
+    "the watchdog's expected value — kernel reused PID for a new process between "
+    "cross-check and Lua execution. Non-zero count means at least one race was "
+    "caught; alert on rate >0.",
+    registry=registry,
+)
+
 # Pre-warm Histogram/Counter label children at module load so the first
 # observe() inside a timed/locked section doesn't pay the tuple-key + dict-slot
 # allocation cost (Step 7 GC lesson — see CLAUDE.md §8 "GC callback bodies
@@ -274,6 +339,12 @@ hydration_seconds.labels(outcome="ok")
 hydration_seconds.labels(outcome="err")
 wal_consumer_liveness_refresh_failures.labels(outcome="ok")
 wal_consumer_liveness_refresh_failures.labels(outcome="error")
+heartbeat_writes_total.labels(outcome="ok")
+heartbeat_writes_total.labels(outcome="redis_error")
+watchdog_segments_unlinked_total.labels(path="dead_pid")
+watchdog_segments_unlinked_total.labels(path="cleanup_queue")
+watchdog_cross_check_unverifiable_total.labels(reason="access_denied")
+watchdog_cross_check_unverifiable_total.labels(reason="zombie")
 
 
 def start_metrics_server(port: int = 9100) -> None:

@@ -54,7 +54,6 @@ from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 from pyforge.shm import (  # noqa: E402
     SegmentNotFoundError,
     SegmentRegistry,
-    _key_current,
 )
 from pyforge.wal import DEFAULT_STREAM_KEY, PROCESSED_KEY_PREFIX, WALProducer  # noqa: E402
 from pyforge.wal_consumer import KEY_WAL_CONSUMER_LIVENESS, WALConsumer  # noqa: E402
@@ -197,21 +196,37 @@ def parquet_store(tmp_path: Path) -> ParquetDatasetStore:
 def _drop_current(
     registry: SegmentRegistry, redis_client: redis.Redis, schema: type[FeatureSchema]
 ) -> None:
-    """Operator simulation: close the current segment + drain cleanup_queue.
+    """Operator simulation: drop the current segment so a fresh hydrate runs.
 
-    Mirrors what an operator does before re-running hydrate: stop
-    consumer (or wait for liveness expiry), close the registry's
-    current segment, then let the watchdog (simulated here) drain the
-    cleanup_queue. ALSO deletes the schema's `current` pointer —
-    `registry.close` doesn't touch it (production-side, the next
-    `registry.create` overwrites it; for hydrate-from-empty, the
-    operator manually DELs).
+    This is the "operator wants to re-hydrate" path. The Step 14 close-Lua
+    extension clears ``pyforge:schema:{name}:current`` automatically when
+    the closing process is the last holder (refcount-0 path) — this
+    eliminates the workaround for the **producer-consumer pipeline**
+    cleanup (close + drain after the pipeline already drove refcount to 0).
+
+    But ``hydrate()`` deliberately does NOT call ``registry.close()`` on
+    the segment it created — the segment is left alive at refcount=1 for
+    serving processes to ``open_current`` and use. ``_drop_current`` is
+    simulating an operator who decides "I want to re-hydrate" with no
+    serving consumers around: the refcount=1 is a "ghost hold" that
+    open-then-close cannot decrement past, so the helper combines the
+    Step-14-aware close (drains cleanup_queue) with an explicit DEL of
+    ``schema:current`` to mimic the operator's ``redis-cli DEL`` that
+    ADR-013's runbook documents.
+
+    Operator runbook (ADR-013) — for unattended workflows, this is what
+    the watchdog will do over its 150 s detection ceiling once the
+    operator's hydrate process exits. For attended workflows, the
+    operator uses ``redis-cli DEL pyforge:schema:X:current`` directly
+    after confirming no live serving consumers — same shape as the
+    explicit DEL below.
     """
     with contextlib.suppress(SegmentNotFoundError):
         seg = registry.open_current(schema)
         registry.close(seg)
     drain_cleanup_queue(redis_client)
-    redis_client.delete(_key_current(schema))
+    # Operator-style DEL for hydrate's ghost-hold refcount=1.
+    redis_client.delete(f"pyforge:schema:{schema.__name__}:current")
 
 
 async def _run_producer_consumer_pipeline(
@@ -266,12 +281,10 @@ async def _run_producer_consumer_pipeline(
     finally:
         registry.close(seg)
         drain_cleanup_queue(redis_client)
-        # Operator-simulation: drop the schema's `current` pointer too.
-        # `registry.close` only handles refcount + pid_segments + cleanup_queue;
-        # it never deletes `pyforge:schema:{name}:current`. Without this
-        # explicit delete, the next `hydrate()` call sees an orphan
-        # `current` reference and trips precondition #1.
-        redis_client.delete(_key_current(_IntHydrate))
+        # Step 14: registry.close's extended Lua now clears
+        # pyforge:schema:_IntHydrate:current at refcount-0 (rotation-safe).
+        # The historical manual `redis_client.delete(_key_current(...))`
+        # workaround is gone.
 
     return msg_ids
 
@@ -389,7 +402,7 @@ async def test_e2_hydrate_count_matches_parquet_row_count_not_producer_count(
     finally:
         registry.close(seg)
         drain_cleanup_queue(redis_client)
-        redis_client.delete(_key_current(_IntHydrate))
+        # Step 14: close-Lua clears schema:current at refcount-0.
 
     # Read parquet directly via pa.dataset to get the authoritative
     # "what's actually flushed" count. This is the contract being locked.
@@ -593,7 +606,7 @@ async def test_e5_hydrate_as_of_time_excludes_future_writes(
     finally:
         registry.close(seg)
         drain_cleanup_queue(redis_client)
-        redis_client.delete(_key_current(_IntHydrate))
+        # Step 14: close-Lua clears schema:current at refcount-0.
 
     # Hydrate at the cutoff. Lookback covers both writes; the filter
     # MUST exclude t2 because cutoff < t2.

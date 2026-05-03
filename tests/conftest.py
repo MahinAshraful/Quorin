@@ -39,7 +39,7 @@ def redis_client() -> Iterator[redis.Redis]:
 
 
 @pytest.fixture(autouse=True)
-def _shm_test_isolation() -> Iterator[None]:
+def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup steps
     """Scrub Pyforge artifacts after every test.
 
     Runs post-test to:
@@ -100,6 +100,21 @@ def _shm_test_isolation() -> Iterator[None]:
             gc_manager.stop_collector(join_timeout=1.0)
         with contextlib.suppress(Exception):
             gc_manager.unfreeze()
+
+    # ---- Heartbeat thread cleanup (Step 14) ------------------------------
+    # SegmentRegistry.create / open_current call heartbeat.ensure_started,
+    # which spawns a daemon thread. The thread is harmless (daemons don't
+    # block process exit) but stop()ing between tests means the next test
+    # starts with a known-empty pyforge:heartbeats hash AND a clean
+    # _state slate (so test_heartbeat.py's assertions about state-after-
+    # ensure_started aren't polluted by a prior test).
+    try:
+        from pyforge._internal import heartbeat
+    except ImportError:
+        heartbeat = None  # type: ignore[assignment]
+    if heartbeat is not None:
+        with contextlib.suppress(Exception):
+            heartbeat.stop()
 
     # ---- Arrow plan cache cleanup (Step 11) -------------------------------
     # Belt-and-suspenders: tests in test_arrow_schema.py and

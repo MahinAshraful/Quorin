@@ -32,6 +32,7 @@ from pyforge.shm import (  # noqa: E402
     HEADER_FMT,
     HEADER_LEN,
     KEY_CLEANUP_QUEUE,
+    KEY_SEGMENT_TO_SCHEMA,
     MAGIC,
     SchemaCRCMismatchError,
     Segment,
@@ -255,3 +256,104 @@ def test_segment_is_a_dataclass_with_name_schema_handle() -> None:
     # Basic invariant — later steps reach for .name, .schema, .handle.
     fields = {f for f in Segment.__dataclass_fields__}
     assert {"name", "schema", "handle"}.issubset(fields)
+
+
+# ---------------------------------------------------------------------------
+# Step 14: pyforge:segment_to_schema sidetable + close-Lua extension
+# ---------------------------------------------------------------------------
+
+
+def test_create_writes_sidetable(redis_client) -> None:
+    """Step 14: ``SegmentRegistry.create`` writes the sidetable field
+    so the watchdog can clear ``schema:current`` without a KEYS scan.
+    """
+    reg = SegmentRegistry(redis_client)
+    seg = reg.create(_TinySchema, capacity=16)
+    try:
+        # HEXISTS returns 1 if present, 0 if not.
+        assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, seg.name) == 1
+        raw = redis_client.hget(KEY_SEGMENT_TO_SCHEMA, seg.name)
+        assert raw is not None
+        # Value matches the safe-class-name form used in schema:current keys.
+        assert raw.decode() == "_TinySchema"
+    finally:
+        reg.close(seg)
+
+
+def test_close_lua_clears_schema_current_at_refcount_zero(redis_client) -> None:
+    """Step 14 close-Lua extension: when the closing process is the last
+    holder (refcount-0), ``pyforge:schema:{name}:current`` AND the
+    sidetable field are cleared atomically. Symmetric with the watchdog
+    dead-PID Lua.
+    """
+    reg = SegmentRegistry(redis_client)
+    seg = reg.create(_TinySchema, capacity=16)
+    name = seg.name
+    # Pre-conditions: schema:current points at this segment, sidetable populated.
+    assert redis_client.get(_key_current(_TinySchema)) == name.encode()
+    assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name) == 1
+
+    reg.close(seg)
+    # Post-conditions: refcount=0 → close-Lua's refcount-0 branch fired.
+    assert redis_client.get(_key_current(_TinySchema)) is None, (
+        "schema:current should be cleared by close-Lua extension at refcount-0"
+    )
+    assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name) == 0, (
+        "segment_to_schema sidetable should be cleared at refcount-0"
+    )
+    # Segment queued for posix_shm.unlink by the watchdog/drain.
+    assert redis_client.sismember(KEY_CLEANUP_QUEUE, name) == 1
+
+
+def test_close_lua_rotation_safety_skips_current_when_pointer_advanced(
+    redis_client,
+) -> None:
+    """Step 14 close-Lua extension is rotation-safe: when a newer create
+    has flipped ``schema:current`` to a different segment, closing the
+    older segment must NOT clobber the newer pointer. The Lua's
+    ``GET schema:current; if == name, DEL`` conditional handles this.
+    """
+    reg = SegmentRegistry(redis_client)
+    seg1 = reg.create(_TinySchema, capacity=16)
+    name1 = seg1.name
+    # Second create rotates schema:current to a fresh segment. The
+    # registry doesn't decrement seg1's refcount when this happens
+    # (rotation is a separate concept) — but we need TWO holders of
+    # seg1 to drive its close to refcount=0 below. Open seg1 again
+    # first so the rotation creates a clean state.
+
+    # Rotate: schema:current now points at seg2.
+    seg2 = reg.create(_TinySchema, capacity=16)
+    name2 = seg2.name
+    assert redis_client.get(_key_current(_TinySchema)) == name2.encode()
+
+    # Close seg1 (refcount 1 -> 0). Close-Lua sees current != seg1.name
+    # and SKIPs the schema:current DEL.
+    reg.close(seg1)
+    assert redis_client.get(_key_current(_TinySchema)) == name2.encode(), (
+        "close-Lua incorrectly cleared schema:current when it pointed at a different segment"
+    )
+    # seg1's sidetable entry IS cleared (rotation-safe applies only to
+    # schema:current; sidetable lookup is the dispatch and must clean up).
+    assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name1) == 0
+    # seg2's sidetable entry still intact.
+    assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name2) == 1
+
+    # Cleanup.
+    reg.close(seg2)
+
+
+def test_create_segment_to_schema_uses_safe_class_name(redis_client) -> None:
+    """Sidetable values store the safe-class-name form so they can be
+    string-concatenated into ``pyforge:schema:{value}:current`` keys
+    by the watchdog Lua without further escaping.
+    """
+    reg = SegmentRegistry(redis_client)
+    seg = reg.create(_OtherSchema, capacity=16)
+    try:
+        raw = redis_client.hget(KEY_SEGMENT_TO_SCHEMA, seg.name)
+        assert raw is not None
+        # No spaces, no special chars (only [A-Za-z0-9_]).
+        assert raw.decode() == "_OtherSchema"
+    finally:
+        reg.close(seg)

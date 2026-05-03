@@ -47,7 +47,12 @@ from pyforge._internal import posix_shm
 from pyforge._internal.insert_kernel import insert_many, prewarm
 from pyforge.logging import get_logger
 from pyforge.metrics import hydration_entity_count, hydration_seconds
-from pyforge.shm import _key_current, _key_pid_segments, _key_refcount
+from pyforge.shm import (
+    KEY_SEGMENT_TO_SCHEMA,
+    _key_current,
+    _key_pid_segments,
+    _key_refcount,
+)
 from pyforge.wal_consumer import KEY_WAL_CONSUMER_LIVENESS
 
 if TYPE_CHECKING:
@@ -416,6 +421,10 @@ def _force_drop_orphan(
             p.delete(_key_current(schema))
             p.delete(_key_refcount(segment.name))
             p.srem(_key_pid_segments(pid), segment.name)
+            # Step 14: also clear the sidetable so the watchdog doesn't
+            # later see a stale segment_to_schema entry pointing at an
+            # already-unlinked segment.
+            p.hdel(KEY_SEGMENT_TO_SCHEMA, segment.name)
             p.execute()
         redis_ok = True
     except Exception:

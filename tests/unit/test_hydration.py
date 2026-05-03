@@ -99,6 +99,7 @@ class _FakeRedis:
     def __init__(self) -> None:
         self._kv: dict[bytes, bytes] = {}
         self._sets: dict[bytes, set[bytes]] = {}
+        self._hashes: dict[bytes, dict[bytes, bytes]] = {}
         # Track every (method_name, args, kwargs) tuple so tests can
         # assert which mutating calls happened (or didn't). Args are
         # recorded AS-PASSED (not normalized) so test expectations can
@@ -138,6 +139,14 @@ class _FakePipeline:
         self._cmds.append(("srem", (key, member)))
         return self
 
+    def hdel(self, key: Any, *fields: Any) -> _FakePipeline:
+        self._cmds.append(("hdel", (key, *fields)))
+        return self
+
+    def hset(self, key: Any, field: Any, value: Any) -> _FakePipeline:
+        self._cmds.append(("hset", (key, field, value)))
+        return self
+
     def execute(self) -> list[Any]:
         results: list[Any] = []
         for cmd, args in self._cmds:
@@ -147,6 +156,22 @@ class _FakePipeline:
                 results.append(1)
             elif cmd == "srem":
                 self._parent._sets.get(_kbytes(args[0]), set()).discard(_kbytes(args[1]))
+                results.append(1)
+            elif cmd == "hdel":
+                # args[0] = hash key, args[1:] = fields to delete
+                hash_key = _kbytes(args[0])
+                hash_dict = self._parent._hashes.get(hash_key, {})
+                removed = 0
+                for field in args[1:]:
+                    if hash_dict.pop(_kbytes(field), None) is not None:
+                        removed += 1
+                results.append(removed)
+            elif cmd == "hset":
+                hash_key = _kbytes(args[0])
+                hash_dict = self._parent._hashes.setdefault(hash_key, {})
+                hash_dict[_kbytes(args[1])] = (
+                    args[2] if isinstance(args[2], bytes) else str(args[2]).encode()
+                )
                 results.append(1)
         self._cmds.clear()
         return results
@@ -693,3 +718,70 @@ def test_imports_from_shm_helpers_resolve() -> None:
     assert callable(_key_refcount)
     assert callable(_key_pid_segments)
     assert _key_pid_segments(pid).startswith("pyforge:pid_segments:")
+
+
+# ---------------------------------------------------------------------------
+# Step 14: _force_drop_orphan now also clears the sidetable.
+# ---------------------------------------------------------------------------
+
+
+def test_force_drop_orphan_clears_schema_current(
+    fake_redis: _FakeRedis,
+    real_segment: Any,
+) -> None:
+    """``_force_drop_orphan`` clears ``pyforge:schema:{name}:current``.
+
+    Step 13 already had this — Step 14 doesn't change the contract,
+    just locks it via test that any future "consolidation" of cleanup
+    paths can't accidentally drop the DEL.
+    """
+    fake_redis._kv[_kbytes(_key_current(_S))] = real_segment.name.encode()
+
+    _force_drop_orphan(fake_redis, _S, real_segment)
+
+    assert _kbytes(_key_current(_S)) not in fake_redis._kv
+
+
+def test_force_drop_orphan_clears_sidetable(
+    fake_redis: _FakeRedis,
+    real_segment: Any,
+) -> None:
+    """Step 14: ``_force_drop_orphan`` HDELs ``pyforge:segment_to_schema``
+    so the watchdog doesn't later see a stale sidetable entry pointing
+    at an already-unlinked segment.
+    """
+    from pyforge.shm import KEY_SEGMENT_TO_SCHEMA
+
+    sidetable_key = _kbytes(KEY_SEGMENT_TO_SCHEMA)
+    seg_name_bytes = real_segment.name.encode()
+
+    # Pre-populate the sidetable as `registry.create` would.
+    fake_redis._hashes[sidetable_key] = {seg_name_bytes: b"_S"}
+    fake_redis._kv[_kbytes(_key_current(_S))] = real_segment.name.encode()
+
+    _force_drop_orphan(fake_redis, _S, real_segment)
+
+    # Sidetable entry for THIS segment removed.
+    assert seg_name_bytes not in fake_redis._hashes.get(sidetable_key, {})
+
+
+def test_force_drop_orphan_idempotent_with_sidetable(
+    fake_redis: _FakeRedis,
+    real_segment: Any,
+) -> None:
+    """Sidetable HDEL must be idempotent — second invocation must not
+    raise even if the field is already gone (HDEL of missing field
+    returns 0, not an error).
+    """
+    from pyforge.shm import KEY_SEGMENT_TO_SCHEMA
+
+    sidetable_key = _kbytes(KEY_SEGMENT_TO_SCHEMA)
+    seg_name_bytes = real_segment.name.encode()
+    fake_redis._hashes[sidetable_key] = {seg_name_bytes: b"_S"}
+    fake_redis._kv[_kbytes(_key_current(_S))] = real_segment.name.encode()
+
+    _force_drop_orphan(fake_redis, _S, real_segment)
+    _force_drop_orphan(fake_redis, _S, real_segment)
+
+    # No exception, sidetable entry gone.
+    assert seg_name_bytes not in fake_redis._hashes.get(sidetable_key, {})

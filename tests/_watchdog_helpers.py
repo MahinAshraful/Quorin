@@ -1,31 +1,21 @@
-"""Test-side simulators for what Step 14's watchdog WILL do.
+"""Test-side simulators for the Step 14 watchdog.
 
-Step 13 hydration's chaos + integration tests need to simulate the
-watchdog's post-crash cleanup behavior to verify hydrate's recovery
-path (kill -> watchdog -> retry hydrate). Step 14 hasn't shipped yet,
-so this module provides the simulation. When Step 14's real watchdog
-lands at ``pyforge/watchdog.py``, the helpers here either (a) wrap
-the real watchdog's cleanup function, or (b) get deleted in favor of
-calling that function directly. Either way, the contracts these
-helpers document are what Step 14 must implement.
+Step 14's watchdog ships at :mod:`pyforge.watchdog`. These helpers exist
+because (a) Step 13 hydration tests pre-date the watchdog and need to
+simulate post-crash cleanup deterministically, and (b) some tests want
+to drive cleanup outside a subprocess for speed. The helpers now SHARE
+the watchdog's Lua scripts (via :mod:`pyforge._internal.watchdog_lua`)
+so simulation can't drift from production.
 
 Two distinct helpers because the contracts are different:
 
 * :func:`simulate_orphan_cleanup_in_orchestrator` — IN-PROCESS path.
-  Wraps :func:`pyforge.hydration._force_drop_orphan`. Used when the
-  orchestrator caught its own exception (Commit A's mocked unit
-  tests #23, #23b verify this path; Commit B's chaos tests do NOT
-  use this — they're testing the post-crash path).
+  Wraps :func:`pyforge.hydration._force_drop_orphan`.
 * :func:`simulate_watchdog_post_crash_cleanup` — POST-CRASH path.
-  Mirrors the real Step 14 watchdog's semantics: walks
-  ``pyforge:pid_segments:{dead_pid}``, DECRs refcounts, unlinks
-  segments whose refcount hit zero. Does NOT call ``_force_drop_orphan``
-  (different code path entirely — that's same-process cleanup, which
-  the dead orchestrator's process can't run).
-
-The helpers live here, not in ``tests/_helpers.py``, because they're
-specifically Step 14 territory; isolating them telegraphs the future-
-step touch.
+  Calls the real Step 14 cleanup Lua against ``pyforge:pid_segments:{dead_pid}``,
+  including the PID-reuse guard (requires ``expected_create_time_ns``
+  argument; defaults to 0 for tests that don't care about the guard
+  and want a fall-through).
 """
 
 from __future__ import annotations
@@ -34,13 +24,24 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from pyforge._internal import posix_shm
-from pyforge.shm import _key_pid_segments, _key_refcount
+from pyforge._internal.watchdog_lua import (
+    CLEANUP_DEAD_PID_LUA,
+    DRAIN_CLEANUP_QUEUE_LUA,
+)
+from pyforge.shm import (
+    KEY_CLEANUP_QUEUE,
+    KEY_SEGMENT_TO_SCHEMA,
+    _key_pid_segments,
+)
 
 if TYPE_CHECKING:
     import redis
 
     from pyforge.schema import FeatureSchema
     from pyforge.shm import Segment
+
+
+_KEY_HEARTBEATS = "pyforge:heartbeats"
 
 
 def simulate_orphan_cleanup_in_orchestrator(
@@ -52,12 +53,8 @@ def simulate_orphan_cleanup_in_orchestrator(
 
     Wraps :func:`pyforge.hydration._force_drop_orphan` for tests that
     need the same semantics outside the orchestrator's exception
-    handler. NOT used by Commit B's chaos tests — those have a dead
-    orchestrator process and need the post-crash helper below.
-
-    Reserved for future tests that need same-process cleanup
-    simulation (e.g. testing the orchestrator's contract under
-    exception classes the unit tests don't already cover).
+    handler. NOT used by chaos tests — those have a dead orchestrator
+    process and need the post-crash helper below.
     """
     from pyforge.hydration import _force_drop_orphan
 
@@ -67,94 +64,91 @@ def simulate_orphan_cleanup_in_orchestrator(
 def simulate_watchdog_post_crash_cleanup(
     redis_client: redis.Redis,
     dead_pid: int,
+    expected_create_time_ns: int | None = None,
 ) -> int:
-    """The POST-CRASH watchdog path. Mirrors what Step 14 will do.
+    """The POST-CRASH watchdog path. Calls the real Step 14 cleanup Lua.
 
-    Walks ``pyforge:pid_segments:{dead_pid}`` for segments held by the
-    dead process. For each: DECR refcount; if it hit zero,
-    posix_shm.unlink the segment + DEL the refcount key. Then SREM
-    each name from ``pyforge:pid_segments:{dead_pid}`` (drains the
-    set; deletes the key when empty).
+    Atomically:
+    1. PID-reuse guard via ``heartbeats[pid]``.
+    2. SMEMBERS ``pyforge:pid_segments:{dead_pid}``.
+    3. Per segment: DECR refcount, SADD-to-cleanup-queue + clear
+       schema:current via the sidetable when refcount hits zero.
+    4. DEL ``pyforge:pid_segments:{dead_pid}``.
+    5. HDEL ``pyforge:heartbeats {dead_pid}``.
 
-    Also drops any ``pyforge:schema:*:current`` key whose value points
-    at a segment we just unlinked. This uses ``redis.keys()`` which
-    is O(N keyspace) — fine for tests with a tiny key set, NEVER
-    acceptable in production. Step 14's real watchdog will track
-    schema -> segment mapping via a sidetable to avoid this scan.
+    Then this helper :func:`posix_shm.unlink`'s each returned name
+    (Lua can't do POSIX syscalls).
 
-    Returns the number of segments successfully unlinked.
+    Returns the number of segments successfully unlinked. Returns 0
+    if the PID-reuse guard tripped (caller can detect by checking
+    ``pyforge:pid_segments:{dead_pid}`` still has members).
 
-    Critically: does NOT call :func:`pyforge.hydration._force_drop_orphan`
-    — different code path entirely. That helper is the orchestrator's
-    in-process cleanup (knows the ``Segment`` object, has the handle,
-    can call ``posix_shm.close``). The watchdog runs in a different
-    process that didn't create the segment (only knows the name from
-    Redis state, has no handle).
+    PID-reuse guard handling
+    ------------------------
 
-    Future-step note: when Step 14's real watchdog ships, this helper
-    either (a) wraps ``pyforge.watchdog.cleanup_dead_pid(...)`` or
-    similar, or (b) gets deleted in favor of calling that function
-    directly. Either way, the contract this helper documents is what
-    Step 14 must implement.
+    * ``expected_create_time_ns=None`` (default): helper reads
+      ``heartbeats[dead_pid]`` itself, parses the create_ns, and
+      passes that value to the Lua. Effectively a no-op guard for
+      "I don't care about PID reuse" tests (the common case for
+      chaos tests with a SIGKILLed child). If the heartbeats entry
+      is absent, passes 0 — Lua falls through (HGET-nil branch).
+    * ``expected_create_time_ns=int``: helper passes the given int.
+      Used by tests that explicitly validate the guard's mismatch
+      branch (set ``heartbeats[pid]`` to one value, pass a different
+      value here, assert empty return).
     """
-    seg_names_key = _key_pid_segments(dead_pid)
-    raw_names = redis_client.smembers(seg_names_key) or set()
-    unlinked = 0
+    if expected_create_time_ns is None:
+        raw = redis_client.hget(_KEY_HEARTBEATS, str(dead_pid))
+        if raw is not None:
+            decoded = raw.decode("ascii") if isinstance(raw, bytes) else raw
+            try:
+                expected_create_time_ns = int(decoded.split(":", 1)[0])
+            except (ValueError, IndexError):
+                expected_create_time_ns = 0
+        else:
+            expected_create_time_ns = 0
 
-    for raw_name in raw_names:
-        name = raw_name.decode() if isinstance(raw_name, bytes) else raw_name
-        new_count = int(redis_client.decr(_key_refcount(name)))
-        if new_count <= 0:
-            with contextlib.suppress(Exception):
-                posix_shm.unlink(name)
-                unlinked += 1
-            redis_client.delete(_key_refcount(name))
-
-            # Drop schema:*:current pointers that match this name.
-            # NOTE: redis.keys() is O(N keyspace) — test-only.
-            current_keys = redis_client.keys("pyforge:schema:*:current")
-            for ck in current_keys:
-                ck_str = ck.decode() if isinstance(ck, bytes) else ck
-                v = redis_client.get(ck_str)
-                v_str = v.decode() if isinstance(v, bytes) else v
-                if v_str == name:
-                    redis_client.delete(ck_str)
-
-        # Drain the pid_segments set entry regardless of refcount
-        # outcome (we're "absorbing" the dead pid's holdings).
-        redis_client.srem(seg_names_key, raw_name)
-
-    # If the set is now empty, the smembers call above returned all
-    # there was; the SREMs above drained them. Best-effort delete the
-    # set key (Redis auto-deletes empty sets, so this is belt-and-
-    # suspenders for environments where that doesn't apply).
-    with contextlib.suppress(Exception):
-        redis_client.delete(seg_names_key)
-
-    return unlinked
+    cleanup_lua = redis_client.register_script(CLEANUP_DEAD_PID_LUA)
+    count = int(
+        cleanup_lua(
+            keys=[
+                _key_pid_segments(dead_pid),
+                _KEY_HEARTBEATS,
+                KEY_CLEANUP_QUEUE,
+                KEY_SEGMENT_TO_SCHEMA,
+            ],
+            args=[str(dead_pid), str(expected_create_time_ns)],
+        )
+    )
+    if count < 0:
+        # PID-reuse abort.
+        return 0
+    # Lua queued the names to cleanup_queue; drain to actually unlink.
+    return drain_cleanup_queue(redis_client)
 
 
-def drain_cleanup_queue(redis_client: redis.Redis) -> int:
-    """Drain ``pyforge:cleanup_queue`` set, unlinking each segment.
+def drain_cleanup_queue(
+    redis_client: redis.Redis,
+    *,
+    batch: int = 1024,
+) -> int:
+    """Drain ``pyforge:cleanup_queue`` via the real watchdog drain Lua.
 
-    Returns count drained.
-
-    The cleanup_queue is ``SADD``-populated by ``SegmentRegistry.close``'s
-    Lua script when the refcount hits zero (see
-    pyforge/shm.py::_CLOSE_LUA). The real Step 14 watchdog will dequeue
-    entries and ``posix_shm.unlink`` each one. Tests use this to
-    simulate that drain after a clean ``registry.close`` (e.g. E1's
-    "operator drops current segment" simulation).
+    Returns count drained. Used by tests to simulate the watchdog's
+    drain pass after a clean ``registry.close`` (e.g. integration
+    tests' "operator drops current segment").
     """
+    drain_lua = redis_client.register_script(DRAIN_CLEANUP_QUEUE_LUA)
     drained = 0
     while True:
-        name_bytes = redis_client.spop("pyforge:cleanup_queue")
-        if name_bytes is None:
+        returned = drain_lua(keys=[KEY_CLEANUP_QUEUE], args=[str(batch)])
+        if not returned:
             break
-        name = name_bytes.decode() if isinstance(name_bytes, bytes) else name_bytes
-        with contextlib.suppress(Exception):
-            posix_shm.unlink(name)
-        drained += 1
+        for raw_name in returned:
+            name = raw_name.decode() if isinstance(raw_name, bytes) else str(raw_name)
+            with contextlib.suppress(Exception):
+                posix_shm.unlink(name)
+            drained += 1
     return drained
 
 

@@ -31,7 +31,7 @@ from typing import Final, cast
 
 import redis
 
-from pyforge._internal import posix_shm
+from pyforge._internal import heartbeat, posix_shm
 from pyforge._internal.crc import crc32_of_bytes
 from pyforge.layout import (
     DEFAULT_MAX_ID_BYTES,
@@ -104,6 +104,12 @@ def _key_pid_segments(pid: int) -> str:
 
 KEY_CLEANUP_QUEUE: Final[str] = "pyforge:cleanup_queue"
 
+# Step 14: sidetable so the watchdog can clear ``pyforge:schema:{name}:current``
+# pointers without an O(N keyspace) ``KEYS`` scan. Written by
+# :meth:`SegmentRegistry.create`, read + cleared by the watchdog's dead-PID
+# Lua and the close-Lua extension at refcount-0.
+KEY_SEGMENT_TO_SCHEMA: Final[str] = "pyforge:segment_to_schema"
+
 
 # ---------------------------------------------------------------------------
 # Segment + registry.
@@ -131,10 +137,24 @@ class Segment:
 
 # Atomic close: DECR refcount, SADD-to-cleanup-queue if it hit zero, SREM
 # from this process's pid_segments set. One Redis round trip, atomic.
+#
+# Step 14 extension at refcount-0: clear the sidetable + the schema:current
+# pointer (only if it still equals this segment name — rotation-safe). This
+# keeps live-process closes that hit refcount-0 symmetric with the watchdog's
+# dead-PID Lua. KEYS[4] = pyforge:segment_to_schema. ARGV[1] = segment name.
 _CLOSE_LUA: Final[str] = """
 local n = redis.call('DECR', KEYS[1])
 if tonumber(n) <= 0 then
     redis.call('SADD', KEYS[3], ARGV[1])
+    local schema = redis.call('HGET', KEYS[4], ARGV[1])
+    if schema then
+        local current_key = 'pyforge:schema:' .. schema .. ':current'
+        local current = redis.call('GET', current_key)
+        if current == ARGV[1] then
+            redis.call('DEL', current_key)
+        end
+        redis.call('HDEL', KEYS[4], ARGV[1])
+    end
 end
 redis.call('SREM', KEYS[2], ARGV[1])
 return n
@@ -168,6 +188,9 @@ class SegmentRegistry:
         On any failure after :func:`posix_shm.create` succeeds, the segment is
         released and unlinked so ``/dev/shm`` does not leak.
         """
+        # Step 14: heartbeat thread for this process. Idempotent — first
+        # call wins, subsequent calls return immediately.
+        heartbeat.ensure_started(self._redis, os.getpid())
         layout = compute_layout(schema, capacity=capacity, max_id_bytes=max_id_bytes)
         name = _segment_name(schema)
         handle = posix_shm.create(name, layout.total_size)
@@ -191,6 +214,10 @@ class SegmentRegistry:
                 p.set(_key_current(schema), name)
                 p.set(_key_refcount(name), 1)
                 p.sadd(_key_pid_segments(pid), name)
+                # Step 14: sidetable so the watchdog (and the close-Lua
+                # extension) can clear schema:current at refcount-0 without
+                # an O(N keyspace) KEYS scan.
+                p.hset(KEY_SEGMENT_TO_SCHEMA, name, _safe_class_name(schema.__name__))
                 p.execute()
         except BaseException:
             with contextlib.suppress(Exception):
@@ -215,6 +242,8 @@ class SegmentRegistry:
             SegmentNotFoundError: when no current segment is registered.
             SchemaCRCMismatchError: when stored magic/version/CRC differ from local.
         """
+        # Step 14: heartbeat thread for this process. Idempotent.
+        heartbeat.ensure_started(self._redis, os.getpid())
         raw = cast("bytes | None", self._redis.get(_key_current(schema)))
         if raw is None:
             raise SegmentNotFoundError(
@@ -256,6 +285,7 @@ class SegmentRegistry:
                     _key_refcount(name),
                     _key_pid_segments(pid),
                     KEY_CLEANUP_QUEUE,
+                    KEY_SEGMENT_TO_SCHEMA,
                 ],
                 args=[name],
             )
