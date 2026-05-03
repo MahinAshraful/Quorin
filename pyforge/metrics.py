@@ -222,6 +222,59 @@ offline_read_rows = Histogram(
     registry=registry,
 )
 
+# Hydration (Step 13).
+# Precondition rejections (HydrationConflictError raised before the timed
+# section) are NOT counted in `hydration_seconds` — they represent rejected
+# calls, not failed work. The 'err' bucket counts only failures that reached
+# the timed section. See `pyforge.hydration.hydrate` docstring "Metrics".
+hydration_seconds = Histogram(
+    "pyforge_hydration_seconds",
+    "Wall-clock time per hydrate() call that reached the timed section. "
+    "Excludes precondition rejections.",
+    labelnames=("outcome",),  # ok | err
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+    registry=registry,
+)
+
+hydration_entity_count = Histogram(
+    "pyforge_hydration_entity_count",
+    "Entities loaded per successful hydrate() call.",
+    buckets=(1, 10, 100, 1_000, 10_000, 100_000, 1_000_000),
+    registry=registry,
+)
+
+# WAL consumer liveness (Step 13 cross-step touch).
+# Hydration's precondition #2 reads `pyforge:wal_consumer:liveness` to refuse
+# a clobber while a consumer is actively writing. The consumer SETs this key
+# every 10s with a 30s TTL; if Redis is reachable, age stays near zero. During
+# a Redis outage the gauge climbs (see WALConsumer.run for the per-loop
+# update). Operators alert on `liveness_age_seconds > 30` AND on the failure
+# counter's error rate.
+wal_consumer_liveness_age_seconds = Gauge(
+    "pyforge_wal_consumer_liveness_age_seconds",
+    "Seconds since the WAL consumer's last successful liveness-key SET. "
+    "Climbs above LIVENESS_REFRESH_INTERVAL_SECONDS during Redis outages.",
+    registry=registry,
+)
+
+wal_consumer_liveness_refresh_failures = Counter(
+    "pyforge_wal_consumer_liveness_refresh_failures_total",
+    "WAL consumer liveness-key SET attempts by outcome.",
+    labelnames=("outcome",),  # ok | error
+    registry=registry,
+)
+
+# Pre-warm Histogram/Counter label children at module load so the first
+# observe() inside a timed/locked section doesn't pay the tuple-key + dict-slot
+# allocation cost (Step 7 GC lesson — see CLAUDE.md §8 "GC callback bodies
+# must not allocate"). Hydration is multi-second so this is academic for
+# `hydration_seconds`, but the liveness counter is touched inside the WAL
+# consumer's hot loop where it matters.
+hydration_seconds.labels(outcome="ok")
+hydration_seconds.labels(outcome="err")
+wal_consumer_liveness_refresh_failures.labels(outcome="ok")
+wal_consumer_liveness_refresh_failures.labels(outcome="error")
+
 
 def start_metrics_server(port: int = 9100) -> None:
     """Expose the Pyforge registry on ``/metrics``.

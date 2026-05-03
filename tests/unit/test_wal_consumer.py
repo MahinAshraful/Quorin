@@ -663,3 +663,87 @@ async def test_flush_loop_wakes_on_signal(fake_redis: AsyncFakeRedis, segment: A
             await asyncio.wait_for(flush_task, timeout=1.0)
     finally:
         await consumer._release_consumer_lock()
+
+
+# ---------------------------------------------------------------------------
+# Test #29 — liveness gauge startup window regression.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_liveness_gauge_does_not_read_system_uptime_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_redis: AsyncFakeRedis,
+    segment: Any,
+) -> None:
+    """The gauge MUST NOT briefly read system_uptime as 'age' between
+    consumer startup and the first scheduled refresh.
+
+    Two mechanisms combine to make this robust:
+    1. Force-first-refresh pattern in WALConsumer.run() seeds
+       ``_liveness_last_refresh = time.monotonic()`` BEFORE the main
+       loop's first gauge.set() call.
+    2. Defensive ``wal_consumer_liveness_age_seconds.set(0.0)`` in the
+       same startup block, immediately after the seed — guards against
+       multiprocess-collector futures where an un-set Gauge could read
+       a stale value persisted from a crashed predecessor.
+
+    A future reader who removes either mechanism should still see this
+    test pass — the OTHER mechanism alone is sufficient today. Both
+    together make the contract un-regressable.
+
+    On a long-uptime box, ``time.monotonic()`` returns a value in the
+    thousands or hundreds of thousands. Without these mechanisms, the
+    first loop iter would compute ``gauge = time.monotonic() - 0.0 =
+    system_uptime``, and a Prometheus scrape landing in the 1-5ms
+    window before the first scheduled refresh would page on-call.
+    """
+    import os
+    import types
+
+    from pyforge.metrics import (
+        wal_consumer_liveness_age_seconds,
+    )
+    from pyforge.wal_consumer import (
+        LIVENESS_REFRESH_INTERVAL_SECONDS,
+    )
+
+    # Simulate a 1-day-uptime box. Replace `pyforge.wal_consumer.time`
+    # with a tiny stub object exposing `monotonic` and `perf_counter` —
+    # avoids mutating the global `time` module which would affect
+    # pytest's own clock.
+    fake_now = 86_400.0
+    import time as real_time
+
+    fake_time = types.SimpleNamespace(
+        monotonic=lambda: fake_now,
+        perf_counter=real_time.perf_counter,
+    )
+    monkeypatch.setattr("pyforge.wal_consumer.time", fake_time)
+
+    consumer = WALConsumer(
+        fake_redis,  # type: ignore[arg-type]
+        segments={"_S": segment},
+    )
+
+    # Manually replicate run()'s force-first-refresh startup block so
+    # we can observe the gauge state without driving the full event
+    # loop. If run()'s init block changes, this test will need to
+    # update. The two assertions check both mechanisms locked by
+    # plan Rev-10 CRITICAL #1:
+    consumer._pid_str = str(os.getpid()).encode("ascii")
+    consumer._liveness_last_refresh = fake_now  # type: ignore[assignment]
+    wal_consumer_liveness_age_seconds.set(0.0)  # defensive line
+
+    # Now drive one iter of the main loop. _run_one_iter calls
+    # `time.monotonic()` (now mocked to fake_now), then sets the gauge
+    # to `now - _liveness_last_refresh` = 0. Without the seed above,
+    # this would compute `86400 - 0 = 86400` and the assertion below
+    # would fail.
+    await consumer._run_one_iter()
+
+    gauge_value = wal_consumer_liveness_age_seconds._value.get()
+    assert gauge_value < LIVENESS_REFRESH_INTERVAL_SECONDS, (
+        f"gauge briefly read system_uptime ({gauge_value}) instead of "
+        f"~0 — force-first-refresh + defensive set(0.0) pattern broken"
+    )

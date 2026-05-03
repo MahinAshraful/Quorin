@@ -83,6 +83,8 @@ from pyforge.metrics import (
     wal_consumer_apply_total,
     wal_consumer_batch_size,
     wal_consumer_flush_seconds,
+    wal_consumer_liveness_age_seconds,
+    wal_consumer_liveness_refresh_failures,
     wal_consumer_pending_ack_size,
     wal_consumer_unknown_schema_total,
 )
@@ -119,6 +121,13 @@ PROCESSED_KEY_TTL_SECONDS = 86_400  # 24h; ADR-009 §2.
 
 CONSUMER_LOCK_PREFIX = b"pyforge:consumer:lock:"
 CONSUMER_LOCK_TTL_SECONDS = 60
+
+# Liveness key — Step 13 cross-step touch. Hydration's precondition #2
+# reads this key to refuse a clobber while a consumer is actively writing.
+# Single source of truth; `pyforge.hydration` imports the constant here.
+KEY_WAL_CONSUMER_LIVENESS = b"pyforge:wal_consumer:liveness"
+LIVENESS_REFRESH_INTERVAL_SECONDS = 10
+LIVENESS_TTL_SECONDS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -243,16 +252,20 @@ class WALConsumer:
         "_c_apply_dup",
         "_c_apply_err",
         "_c_apply_ok",
+        "_c_liveness_err",
+        "_c_liveness_ok",
         "_consumer_name",
         "_flush_interval_seconds",
         "_flush_now",
         "_group_name",
         "_h_flush_err",
         "_h_flush_ok",
+        "_liveness_last_refresh",
         "_lock_key",
         "_max_pending_ack",
         "_offline",
         "_pending_ack",
+        "_pid_str",
         "_redis",
         "_row_buffers",
         "_schemas",
@@ -328,6 +341,15 @@ class WALConsumer:
         self._c_apply_bad_id = wal_consumer_apply_total.labels(outcome="bad_entity_id")
         self._h_flush_ok = wal_consumer_flush_seconds.labels(outcome="ok")
         self._h_flush_err = wal_consumer_flush_seconds.labels(outcome="error")
+        self._c_liveness_ok = wal_consumer_liveness_refresh_failures.labels(outcome="ok")
+        self._c_liveness_err = wal_consumer_liveness_refresh_failures.labels(outcome="error")
+
+        # Liveness state — `_pid_str` and `_liveness_last_refresh` are
+        # re-seeded at run() startup (force-first-refresh pattern) so the
+        # gauge never reads system_uptime as "age". See plan §"Boundary
+        # risk #1" + run() docstring.
+        self._pid_str = b""  # set in run() before any liveness SET
+        self._liveness_last_refresh = 0.0
 
     # ------------------------------------------------------------------
     # Public API.
@@ -339,7 +361,12 @@ class WALConsumer:
         Acquires the consumer-name lock first; raises
         :class:`ConsumerNameInUseError` if held by another process.
         Releases the lock + does a final flush+XACK on exit (whether
-        clean or via exception).
+        clean or via exception). Issues an initial liveness SET BEFORE
+        entering the main loop (force-first-refresh) so the per-iter
+        gauge never reads ``time.monotonic()`` as "age" — without this,
+        the first iter computes ``gauge = uptime - 0.0`` which on a
+        long-uptime box looks like "86400s since last refresh" and
+        false-pages on-call.
 
         Redis connection errors propagate out — caller wraps in retry.
         """
@@ -347,12 +374,36 @@ class WALConsumer:
         try:
             await self._ensure_group()
             await self._drain_pel()
+
+            # Force-first-refresh + monotonic seeding (plan CRITICAL #1).
+            # Cache pid_str once; saves str(int) per refresh.
+            self._pid_str = str(os.getpid()).encode("ascii")
+            self._liveness_last_refresh = time.monotonic()
+            # Defensive set-to-zero (plan Rev-10 CRITICAL #1): guards
+            # against a multiprocess-collector future where an un-set
+            # Gauge could persist a stale value from the previous
+            # process incarnation. No-op today (single-process default
+            # is 0.0); one line eliminates the race forever.
+            wal_consumer_liveness_age_seconds.set(0.0)
+            try:
+                await self._redis.set(
+                    KEY_WAL_CONSUMER_LIVENESS,
+                    self._pid_str,
+                    ex=LIVENESS_TTL_SECONDS,
+                )
+                self._c_liveness_ok.inc()
+            except Exception:
+                self._c_liveness_err.inc()
+                # Initial refresh failure is non-fatal; main loop retries
+                # every 10s. Hydration's precondition #2 stays "no
+                # liveness key" until the first SET succeeds — operator
+                # procedure: don't hydrate while a consumer is starting
+                # up. Step 14 watchdog will reconcile post-Step-14.
+
             flush_task = asyncio.create_task(self._flush_loop(), name="pyforge-wal-flush")
             try:
                 while not self._stop_event.is_set():
-                    msgs = await self._read_new_batch()
-                    if msgs:
-                        await self._process_batch(msgs)
+                    await self._run_one_iter()
             finally:
                 # Cancel + await the flush task BEFORE the final flush so we
                 # never have two flushes in flight at once. ADR-009 §11.
@@ -361,8 +412,59 @@ class WALConsumer:
                     await flush_task
                 await self._final_flush_and_ack()
                 await self._offline.close()
+                # Best-effort liveness cleanup so a fast restart doesn't
+                # see the stale key (the 30s TTL would expire it eventually).
+                with contextlib.suppress(Exception):
+                    await self._redis.delete(KEY_WAL_CONSUMER_LIVENESS)
         finally:
             await self._release_consumer_lock()
+
+    async def _run_one_iter(self) -> None:
+        """One iteration of the main run loop: XREADGROUP → apply → liveness.
+
+        Extracted from :meth:`run` for testability — Step 13's regression
+        test #29 drives a single iter to assert the liveness gauge does
+        NOT briefly read ``time.monotonic()`` as "age" between consumer
+        startup and the first scheduled refresh. Future chaos /
+        integration tests will reuse this affordance.
+
+        Liveness placement: post-XREADGROUP, pre-apply, gated on elapsed
+        time. Plan §"sub-step 8" locks this to "post-XREADGROUP, pre-apply,
+        unconditional on message count" so quiet streams with long
+        ``block_ms`` still see the 10s refresh cadence.
+        """
+        msgs = await self._read_new_batch()
+
+        # Update age gauge EVERY loop iter so it climbs naturally during
+        # Redis outages (when SETs fail and `_liveness_last_refresh` does
+        # not advance). Per-loop overhead is ~3-7µs/call (lock + float
+        # store) x 50-200 iters/sec = 0.015-0.14% CPU — negligible for
+        # the observability gain.
+        now = time.monotonic()
+        wal_consumer_liveness_age_seconds.set(now - self._liveness_last_refresh)
+
+        if now - self._liveness_last_refresh >= LIVENESS_REFRESH_INTERVAL_SECONDS:
+            try:
+                await self._redis.set(
+                    KEY_WAL_CONSUMER_LIVENESS,
+                    self._pid_str,
+                    ex=LIVENESS_TTL_SECONDS,
+                )
+                self._liveness_last_refresh = now
+                self._c_liveness_ok.inc()
+            except Exception:
+                self._c_liveness_err.inc()
+                # Liveness drift during a Redis outage is a known
+                # correctness compromise — accepted because the
+                # alternative is consumer-suicide-on-Redis-blip. After
+                # 3 missed refreshes (~30s) the TTL expires; hydration's
+                # precondition #2 then passes while a stale consumer
+                # still owns the segment write seat. Operators alert
+                # on `pyforge_wal_consumer_liveness_refresh_failures_total{outcome="error"}`
+                # AND on `pyforge_wal_consumer_liveness_age_seconds > 30`.
+
+        if msgs:
+            await self._process_batch(msgs)
 
     async def stop(self) -> None:
         """Signal the run loop to exit at the next batch boundary.
