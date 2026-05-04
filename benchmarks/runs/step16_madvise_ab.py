@@ -145,6 +145,21 @@ def main() -> int:
     args = parser.parse_args()
     n_runs: int = args.num_runs
 
+    # Rev-8: snapshot pre-existing /dev/shm pollution from prior workflow
+    # steps. The defensive glob at exit only flags segments NEW since this
+    # snapshot — i.e. ones THIS orchestrator's subprocesses leaked. Cross-
+    # step pollution (e.g. a SIGBUSed LARGE+RECORD step leaving stale
+    # pyforge_* segments behind) is the upstream step's problem and must
+    # NOT prevent the MADV A/B from writing its JSON. Run #31 surfaced this:
+    # without the snapshot diff, we'd raise SystemExit before write_text().
+    pre_existing_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
+    if pre_existing_shm:
+        print(
+            f"NOTE: {len(pre_existing_shm)} pre-existing /dev/shm/pyforge_* segments "
+            f"observed at startup (probably leaked by a prior workflow step). "
+            f"Snapshotted; only NEW segments will be flagged at exit."
+        )
+
     results_dir = Path("benchmarks/results/madv_ab_runs")
     results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -156,13 +171,16 @@ def main() -> int:
     true_p99s, true_failures = run_one_side(True, n_runs, results_dir)
     print(f"  {len(true_p99s)}/{n_runs} ok, {len(true_failures)} failed")
 
-    # Defensive exit assertion: no /dev/shm leaks. The bench uses
-    # make_segment which posix_shm.unlinks per iteration; this catches the
-    # rare case where a fixture teardown didn't run (subprocess SIGKILL etc).
-    leaked = [str(p) for p in Path("/dev/shm").glob("pyforge_*")]
+    # Defensive exit assertion: only flag /dev/shm segments leaked by THIS
+    # run, not pre-existing pollution from prior workflow steps (Rev-8 fix).
+    # The bench uses make_segment which posix_shm.unlinks per iteration;
+    # this catches the rare case where a fixture teardown didn't run
+    # (subprocess SIGKILL etc).
+    current_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
+    leaked = sorted(current_shm - pre_existing_shm)
     if leaked:
         raise SystemExit(
-            f"BENCH LEAK DETECTED: /dev/shm has {len(leaked)} stale segments: {leaked[:5]}"
+            f"BENCH LEAK DETECTED: this run added {len(leaked)} segments: {leaked[:5]}"
         )
 
     n_false_ok, n_true_ok = len(false_p99s), len(true_p99s)

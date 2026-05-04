@@ -11,6 +11,10 @@ on:
         description: "Capture py-spy --native flamegraphs (manual + slow)"
         required: false
         default: "false"
+      run_large_shm_bench:
+        description: "Opt into bench_upgrade_1m_50_field (~3.2 GB segment; ubuntu-latest WILL SIGBUS — set true only on a runner with adequate /dev/shm)"
+        required: false
+        default: "false"
   schedule:
     # Weekly Tier-2 N=20 orchestrator pass at 06:00 UTC Monday. ~30-60 min.
     # Catches drift in the headline benches that Tier-1's per-PR runs don't
@@ -120,13 +124,17 @@ jobs:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
           PYFORGE_RUN_LARGE_BENCH: "1"
           PYFORGE_RUN_RECORD_BENCH: "1"
-          # Step 16b: heavy-shm benches (segment >= 3 GB; e.g.
-          # bench_upgrade_1m_50_field) gate on this var. Set ONLY on
-          # workflow_dispatch — schedule must skip them because
-          # ubuntu-latest /dev/shm (~3.5 GB) cannot host them. Operator-
-          # initiated dispatch runs imply operator-chosen venue.
-          # See ADR-015 §7 + ADR-014 amendment.
-          PYFORGE_RUN_LARGE_SHM_BENCH: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          # Step 16b Rev-8: heavy-shm benches gate on EXPLICIT operator opt-in
+          # via workflow_dispatch input. `gh workflow run benchmark.yml` (no
+          # flags) leaves this UNSET → bench skipif fires → bench skipped →
+          # workflow stays green so downstream MADV A/B step runs. Operators
+          # with adequate /dev/shm pass `-f run_large_shm_bench=true` to
+          # enable. ubuntu-latest cannot host bench_upgrade_1m_50_field
+          # (~3.2 GB segment) regardless of trigger event (ADR-015 §7).
+          # The Rev-7 "auto-set on workflow_dispatch" assumption was wrong:
+          # `gh workflow run` defaults to ubuntu-latest, same constrained
+          # box as schedule.
+          PYFORGE_RUN_LARGE_SHM_BENCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_large_shm_bench == 'true' && '1' || '' }}
         run: |
           uv run pytest benchmarks/ \
             --benchmark-only \
@@ -181,7 +189,15 @@ jobs:
       # picks SHIP-vs-REJECT-vs-re-trigger per plan §10.
       # ==========================================================
       - name: Run Step 16b MADV_HUGEPAGE A/B (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
+        # Step 16b Rev-8: `always() && ...` so MADV runs even if upstream
+        # LARGE+RECORD or N=20 step failed. The MADV bench is independent
+        # (cold-cache 200-field at capacity=16, ~200 KB segment) — its
+        # correctness doesn't depend on the heavy benches passing.
+        # Without `always()`, GitHub auto-applies success() to any if:
+        # without a status function, so a SIGBUS upstream cascades through
+        # all downstream steps. Run #31 caught this: LARGE+RECORD SIGBUSed
+        # and MADV got skipped, leaving no madv_ab.json artifact.
+        if: always() && github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: |
           uv run python benchmarks/runs/step16_madvise_ab.py \
