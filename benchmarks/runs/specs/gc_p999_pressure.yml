@@ -1,0 +1,13 @@
+# Assemble p999 under realistic GC pressure (P4 corrected GC bench).
+# The headline "5us p999 under GC pressure" claim. Differs from
+# test_gc_p999.py (which measures GC pause durations directly per
+# ADR-006); this measures assemble latency WHILE GC churn happens.
+#
+# Pedantic mode + rounds=10000 (C1 fix). N=20 subprocesses x 10k rounds
+# = 200k samples per scenario for solid p999 resolution.
+name: gc_p999_pressure
+description: assemble p999 with concurrent GC pressure (50 MB/s alloc rate)
+test_path: benchmarks/test_assemble_under_gc.py::test_bench_assemble_p999_under_gc_pressure_4_field
+percentiles: [50, 95, 99, 999, 9999]
+warmup_runs: 1
+timeout_seconds: 240

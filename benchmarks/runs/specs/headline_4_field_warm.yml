@@ -1,0 +1,9 @@
+# 4-field warm-cache assemble, single-entity, fresh subprocess.
+# This is THE 5us p99 headline claim (plan §2.1 trip-wire).
+# If Tier-2 N=20 native-Linux p99 > 5us, lookup-jit ships in 16c.
+name: headline_4_field_warm
+description: 4-field warm-cache assemble; the headline 5us p99 claim
+test_path: benchmarks/test_assembly_benchmark.py::test_bench_assemble_4_field_warm_numba
+percentiles: [50, 95, 99, 999, 9999]
+warmup_runs: 1
+timeout_seconds: 120

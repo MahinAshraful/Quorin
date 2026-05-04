@@ -1,0 +1,16 @@
+# Hydration at 1M rows, 200 fields. Per plan §3.3 row 8: this scenario
+# uses the orchestrator's --num-runs override (operator should pass
+# --num-runs 5 not 20) because hydrate_1m is ~30s/run; subprocess tax
+# dominates beyond N=5.
+#
+# Bench is env-gated via PYFORGE_RUN_LARGE_BENCH=1 (set in the parent
+# shell before invoking the orchestrator). The orchestrator inherits
+# parent env per the env-inheritance contract in repeat.py's docstring.
+name: hydration_1m
+description: hydration 1M x 200-field; operator passes --num-runs 5 (not 20)
+test_path: benchmarks/test_hydration_benchmark.py::test_hydrate_1m_200_field
+percentiles: [50, 95, 99]
+warmup_runs: 0  # 1M hydrate is slow; don't waste a run on warmup
+# Hydration setup at 1M is ~5-10 min (Parquet dataset gen) + ~30s (the
+# actual hydrate call). 1200s = 20min cap.
+timeout_seconds: 1200

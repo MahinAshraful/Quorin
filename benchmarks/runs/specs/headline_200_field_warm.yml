@@ -1,0 +1,8 @@
+# 200-field warm-cache assemble + 128-dim embedding. Realistic-production
+# headline; spec target 10-20us p99.
+name: headline_200_field_warm
+description: 200-field + 128-emb warm-cache assemble (realistic production)
+test_path: benchmarks/test_assembly_benchmark.py::test_bench_assemble_200_field_warm_numba
+percentiles: [50, 95, 99, 999, 9999]
+warmup_runs: 1
+timeout_seconds: 120

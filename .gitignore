@@ -59,6 +59,15 @@ docker/redis_data/
 # py-spy artifacts (transient — keep committed flamegraphs only in benchmarks/results/)
 *.svg.tmp
 
+# Benchmark transient outputs (Step 16). Raw per-round timing data with
+# --benchmark-save-data is multi-MB per file and machine-specific; never
+# committed. The aggregated N=20 outputs (benchmarks/results/n20/*.json,
+# top-level only) ARE small + headline-quality — those stay committed.
+benchmarks/results/Linux-CPython-*/
+benchmarks/results/.benchmarks/
+benchmarks/results/regression_check.json
+benchmarks/results/n20/_tmp/
+
 # Personal build progress journal — not shared.
 progress/
 

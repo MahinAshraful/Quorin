@@ -5,13 +5,26 @@ the two p99 numbers can be compared directly. ADR-004's adoption gate is
 the 200-field warm Numba p99 vs Python p99: >=3x wins adoption as production
 default; <3x ships parity-only.
 
-Targets we gate on (see benchmarks/regression/thresholds.yml):
-  * assemble_4_field_warm_numba:    p99 < 10 us  (spec: 5 us; 2x headroom for CI)
-  * assemble_200_field_warm_numba:  p99 < 50 us  (spec: 10-20 us; 2.5x headroom)
+Targets we gate on (see benchmarks/regression/tier1.yml — gate values are
+WSL2-tolerant pending Step 16c native-Linux retightening):
+  * assemble_4_field_warm_numba:                  p99 (Step 5 + 16 trip-wire)
+  * assemble_200_field_warm_numba:                p99 (realistic production)
+  * assemble_200_field_cold_cache_numba:          p99 (NEW Step 16, see below)
 
-The crossover-scan and cold-cache scenarios are committed but NOT gated —
-they're for plotting / honest-large-schema reporting, not regression
-detection.
+Step 16 changes:
+  * Cold-cache test rewritten to use the session-scoped ``cold_cache_clobber``
+    fixture (4x detected L3, capped at 1 GB; 16 MiB fallback on WSL2 / VMs
+    that hide cache hierarchy). Replaces the pre-Step-16 hardcoded 32 MiB
+    clobber that was median-calibrated and would silently undersize on
+    AMD EPYC / Intel Sapphire Rapids hardware.
+  * Module-top ``pytestmark`` skipif tightened to require Linux (was
+    just non-win32). Cold-cache fixture reads /sys/, so Linux is now
+    explicit.
+  * Pool head-to-head NOT implemented as a Tier-1 gate — pytest-benchmark
+    doesn't model derived metrics (delta between two benches). The pooled
+    paths are gated absolutely; the +0.5us-overhead claim from ADR-005
+    is a manual diff in 16c review against committed JSON. See
+    progress/step16c_review.md for the explicit checklist.
 """
 
 from __future__ import annotations
@@ -24,8 +37,12 @@ import numpy as np
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="assembly requires POSIX (Linux/WSL2)",
+    sys.platform != "linux",
+    reason=(
+        "assembly benches require Linux: POSIX shm + /sys/.../index3 for the "
+        "cold-cache L3 detection. Step 16 tightened the platform bound from "
+        "win32-skip to linux-only."
+    ),
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
@@ -173,26 +190,39 @@ def test_bench_assemble_crossover(benchmark, n: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cold-cache benchmark — manual-only (slow + noisy). Clobbers CPU caches
-# between iterations to measure the honest large-schema number that the
-# warm benchmark hides.
+# Cold-cache benchmark (Step 16 P3 + C3 rewrite).
+# Uses the session-scoped ``cold_cache_clobber`` fixture (4x detected L3,
+# capped at 1 GB; 16 MiB fallback when sysfs hides cache hierarchy).
+# Pedantic mode + rounds=200 + warmup_rounds=0: each round is one assemble
+# call preceded by a clobber-array sum, so we measure cold-CPU-cache p99.
+# Honest disclosure: this measures cold-CPU-cache, NOT cold-page-cache —
+# the segment is still resident in /dev/shm tmpfs. ADR-015 covers the
+# methodology in full.
+# Step 16 trip-wire: if Tier-2 N=20 native-Linux p99 > 50us AFTER the
+# MADV_HUGEPAGE A/B decision (16b), revise the README cold-cache claim
+# with the measured number per ADR-015 "Cold-cache reality."
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
-def test_bench_assemble_200_field_cold_cache_numba(benchmark, seg_200_field) -> None:
-    """Force a ~32 MiB read between iterations to evict CPU caches.
-    Run with ``uv run pytest -m slow --benchmark-only ...`` to invoke."""
+def test_bench_assemble_200_field_cold_cache_numba(
+    benchmark, seg_200_field, cold_cache_clobber
+) -> None:
+    """200-field cold-CPU-cache assemble; L3-sized clobber via session fixture.
+
+    The clobber array is sized at 4x detected L3 (capped at 1 GB) so the
+    sequential .sum() evicts every line of a fully populated L3. On WSL2
+    / VMs the fixture trips the 16 MiB fallback and logs WARN (the C3
+    fix working as intended; Ubuntu CI runners surface real L3).
+    """
+    clobber, clobber_bytes = cold_cache_clobber
+    benchmark.extra_info["clobber_bytes"] = clobber_bytes
     seg = seg_200_field
-    clobber = np.zeros(8 * 1024 * 1024, dtype=np.float32)  # 32 MiB
 
-    def _cold_assemble():
-        # Touch a large buffer to evict L1/L2/L3 of segment data.
-        _ = clobber.sum()
-        return assemble(seg, "u")
+    def setup() -> tuple[tuple, dict]:
+        _ = clobber.sum()  # forces L1/L2/L3 eviction; numpy 1.26 1D float64 sum is single-threaded
+        return (seg, "u"), {}
 
-    result = benchmark(_cold_assemble)
-    assert result is not None
+    benchmark.pedantic(assemble, setup=setup, rounds=200, iterations=1, warmup_rounds=0)
 
 
 # ---------------------------------------------------------------------------

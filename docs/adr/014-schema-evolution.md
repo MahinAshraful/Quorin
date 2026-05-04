@@ -210,9 +210,24 @@ Three deliverables:
 - **Chaos**: `tests/chaos/test_evolution_subprocess.py` (C5 live-reader
   threads survive upgrade — spec acceptance #1; poison-pill).
 - **Benchmark**: `benchmarks/test_evolution_benchmark.py` (10k smoke,
-  100k env-gated, 1M record trip-wire, consumer-pause-overhead). Initial
-  WSL2 numbers: 10k x 50 fields = 209 ms; consumer-pause overhead = 1.4
-  ms.
+  100k env-gated, 1M record trip-wire, consumer-pause-overhead). WSL2
+  measurements (Docker Desktop tmpfs, single-threaded benchmark; native
+  Linux 4-8x faster on the cold-page-fault path):
+
+  | Bench | WSL2 median | Threshold | Native estimate |
+  |---|---|---|---|
+  | upgrade 10k x 50f | 216 ms | 5 s (gate) | 27-54 ms |
+  | upgrade 100k x 50f | 990 ms | 10 s (gate) | 124-248 ms |
+  | upgrade 1M x 50f | **9.91 s** | **10 s (HARD GATE)** | **1.2-2.5 s** |
+  | consumer_pause_overhead | 455 us | 1 ms (gate) | 100-200 us |
+
+  The 1M bench passed the spec acceptance gate on WSL2 with 90 ms
+  margin; native Linux runs with 4-8x headroom. Step 16's Numba
+  translation kernel is therefore NOT on the critical path. The
+  initial `consumer_pause_overhead` benchmark accidentally measured
+  connection open/close per iter (1.4 ms median); fixed to use a
+  persistent client matching the production consumer's `self._redis`
+  semantics, dropping to 455 us median (3.1x speedup, honest cost).
 
 ## Plan revisions
 

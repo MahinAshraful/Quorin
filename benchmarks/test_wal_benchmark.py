@@ -31,8 +31,12 @@ import msgpack
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="WAL benchmarks require POSIX Redis client + low-latency loopback",
+    sys.platform != "linux",
+    reason=(
+        "WAL benchmarks require Linux: POSIX shm for the running_consumer_50_field "
+        "fixture used by test_bench_write_sync_rtt_50_field. Step 16 tightened "
+        "the platform bound from win32-skip to linux-only."
+    ),
 )
 
 from pyforge._internal.pydantic_factory import field_order_for, pydantic_model_for  # noqa: E402
@@ -130,20 +134,43 @@ def test_bench_msgpack_pack_200_field(benchmark) -> None:
 
 @pytest.mark.integration
 def test_bench_write_50_field(benchmark, redis_client) -> None:
+    """WALProducer.write() RTT, 50-field schema. Pedantic mode for deterministic
+    p99 — plain ``benchmark()`` auto-calibrates to anywhere from 42 to 373 rounds
+    depending on per-call time + warmup state, making p99 essentially
+    max(samples) with luck-of-the-draw tail behavior. Step 16a converted both
+    write_50/200 + write_sync_rtt to pedantic for consistent methodology.
+    Pre-Step-16 plain ``benchmark()`` shape stays in ``test_bench_xadd_only``
+    + ``test_bench_write_sync_50_field`` (ADR-006 / ADR-008 archive comparators).
+    """
     schema = _make_50_field_schema()
     p = WALProducer(redis_client, stream_key=b"pyforge:wal:bench")
     values = _values_for(schema)
     benchmark.group = "wal_write"
-    benchmark(p.write, schema, "bench-entity", values)
+    benchmark.pedantic(
+        p.write,
+        args=(schema, "bench-entity", values),
+        rounds=100,
+        iterations=1,
+        warmup_rounds=5,
+    )
 
 
 @pytest.mark.integration
 def test_bench_write_200_field(benchmark, redis_client) -> None:
+    """WALProducer.write() RTT, 200-field-with-128-emb schema. See
+    test_bench_write_50_field above for the pedantic-mode rationale.
+    """
     schema = _make_200_field_schema()
     p = WALProducer(redis_client, stream_key=b"pyforge:wal:bench")
     values = _values_for(schema)
     benchmark.group = "wal_write"
-    benchmark(p.write, schema, "bench-entity", values)
+    benchmark.pedantic(
+        p.write,
+        args=(schema, "bench-entity", values),
+        rounds=100,
+        iterations=1,
+        warmup_rounds=5,
+    )
 
 
 @pytest.mark.integration
@@ -195,3 +222,49 @@ def test_bench_write_sync_50_field(benchmark, redis_client) -> None:
     finally:
         stop.set()
         t.join(timeout=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Step 16 P1: write_sync end-to-end RTT through a REAL WALConsumer.
+#
+# Differs from test_bench_write_sync_50_field above (which uses a stub-setter
+# thread polling XREVRANGE): this one wires the actual production code path
+# via the running_consumer_50_field fixture in benchmarks/conftest.py. The
+# consumer uses NoopOfflineWriter per ADR-009 §3 — write_sync unblocks at
+# online-store durability, and we don't conflate offline-flush latency.
+#
+# Tier-1 gate is 75ms p99 (math: 1.5 * max_consumer_cycle(50ms) +
+# backoff_cap(10ms) ~= 85ms, rounded down with consumer fast-path). Sequential
+# single-producer measures one full consumer cycle per call. Concurrent-
+# producer "queue-depth" variant is a Step 17 follow-up if real workloads
+# need sub-50ms.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_bench_write_sync_rtt_50_field(benchmark, running_consumer_50_field) -> None:
+    """Producer.write_sync() -> real consumer -> processed-flag set; full RTT.
+
+    Pedantic mode + rounds=100 (NOT plain ``benchmark()``). At ~9ms per call,
+    plain ``benchmark()`` auto-calibrates to anywhere from 14 to 92 rounds
+    depending on system state — same C1 statistical-uselessness shape that
+    Step 7's lesson warned about. ``pedantic(rounds=100)`` gives deterministic
+    100 samples per run; sample[98] is the meaningful p99 against the 75ms
+    Tier-1 gate. ~5 warmup rounds + 100 timed rounds = ~1s total wall clock.
+    """
+    schema = running_consumer_50_field["schema"]
+    redis_client = running_consumer_50_field["redis_client"]
+    stream_key = running_consumer_50_field["stream_key"]
+    p = WALProducer(redis_client, stream_key=stream_key)
+    values = _values_for(schema)
+    benchmark.group = "wal_write_sync_rtt"
+    # Generous per-call timeout (500ms) so that occasional slow consumer
+    # cycles don't WriteSyncTimeout the bench. The Tier-1 gate (75ms) is
+    # the realistic ceiling.
+    benchmark.pedantic(
+        p.write_sync,
+        args=(schema, "bench-entity", values, None, 500),
+        rounds=100,
+        iterations=1,
+        warmup_rounds=5,
+    )

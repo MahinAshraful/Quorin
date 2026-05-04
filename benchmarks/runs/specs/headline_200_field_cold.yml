@@ -1,0 +1,14 @@
+# 200-field cold-CPU-cache assemble (4x detected L3 clobber between calls).
+# Spec target 20-50us p99. Trip-wire: if Tier-2 N=20 native p99 > 50us
+# AFTER the MADV_HUGEPAGE A/B decision (16b), revise the README claim per
+# plan §10 + ADR-015 "Cold-cache reality."
+#
+# Note: the underlying bench function uses pedantic mode + L3-sized
+# clobber. The bench is NEW in Step 16 (replaces the pre-Step-16
+# 32-MiB-clobber ungated version).
+name: headline_200_field_cold
+description: 200-field cold-CPU-cache assemble; 4x-L3 clobber between calls
+test_path: benchmarks/test_assembly_benchmark.py::test_bench_assemble_200_field_cold_cache_numba
+percentiles: [50, 95, 99, 999, 9999]
+warmup_runs: 1
+timeout_seconds: 180

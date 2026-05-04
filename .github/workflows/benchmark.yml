@@ -3,7 +3,22 @@ name: benchmark
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      record_flamegraphs:
+        description: "Capture py-spy --native flamegraphs (manual + slow)"
+        required: false
+        default: "false"
+  schedule:
+    # Weekly Tier-2 N=20 orchestrator pass at 06:00 UTC Monday. ~30-60 min.
+    # Catches drift in the headline benches that Tier-1's per-PR runs don't
+    # surface (single-process pytest-benchmark hides tail variance per
+    # Step 7's expensive lesson). Output JSON committed to
+    # benchmarks/results/n20/ via a follow-up PR (manual; CI uploads as
+    # artifacts only).
+    - cron: "0 6 * * 1"
 
 jobs:
   bench:
@@ -35,23 +50,108 @@ jobs:
       - name: Sync dependencies
         run: uv sync --all-extras
 
-      - name: Run benchmarks
+      # Numba writes .nbi (signature index) + .nbc (LLVM bitcode) into
+      # <module>/__pycache__/ next to .py files. Caching these avoids paying
+      # ~300 ms first-call compile per subprocess in the Tier-2 orchestrator.
+      # Two-level key: uv.lock invalidates on dep version changes (a Numba
+      # bump produces incompatible bitcode → LOAD-time error mid-bench
+      # rather than recompile); source file hashes invalidate on kernel
+      # edits. Restore-keys cascade falls back to "any source" — Numba's
+      # internal source-hash check (separate from this cache key) evicts
+      # mismatched .nbc on load and recompiles cleanly, so partial restore
+      # is correctness-safe (worst case: redundant recompile).
+      - name: Numba JIT cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            pyforge/__pycache__
+            pyforge/_internal/__pycache__
+          key: numba-jit-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyforge/assembly.py', 'pyforge/_internal/insert_kernel.py') }}
+          restore-keys: |
+            numba-jit-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock') }}-
+            numba-jit-${{ runner.os }}-py3.12-
+
+      # ==========================================================
+      # Tier-1: always-run regression gates. PR-blocking. <1 min total.
+      # ==========================================================
+      - name: Run benchmarks (Tier-1)
         env:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
         run: |
           uv run pytest benchmarks/ \
+            --benchmark-only \
             --benchmark-autosave \
+            --benchmark-save-data \
+            --benchmark-storage=benchmarks/results \
+            -m "not slow"
+
+      - name: Check Tier-1 thresholds
+        run: uv run python benchmarks/regression/check.py --strict
+
+      # ==========================================================
+      # Tier-2: env-gated heavy benches. Push-to-main + workflow_dispatch
+      # + scheduled weekly only. NOT PR-blocking.
+      # ==========================================================
+      - name: Run benchmarks (Tier-2)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        env:
+          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+          PYFORGE_RUN_LARGE_BENCH: "1"
+          PYFORGE_RUN_RECORD_BENCH: "1"
+        run: |
+          uv run pytest benchmarks/ \
+            --benchmark-only \
+            --benchmark-autosave \
+            --benchmark-save-data \
             --benchmark-storage=benchmarks/results
 
-      - name: Check regression thresholds
-        run: |
-          uv run python -c "import yaml, pathlib; \
-            t = yaml.safe_load(pathlib.Path('benchmarks/regression/thresholds.yml').read_text()); \
-            print('thresholds loaded:', t)"
-        # TODO (Step 16): replace the print-only check with a real comparison
-        # against benchmarks/results/ using pytest-benchmark's --benchmark-compare-fail.
+      - name: Check Tier-1 + Tier-2 thresholds
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: uv run python benchmarks/regression/check.py --include-tier2 --strict
 
+      # ==========================================================
+      # Tier-2 N=20 fresh-subprocess orchestrator runs (workflow_dispatch
+      # + scheduled only — too slow for push-to-main). Each scenario =
+      # 20 fresh subprocesses; full suite ~30-60 min wall clock per Step
+      # 16 plan §3.2.
+      # ==========================================================
+      - name: Run Tier-2 N=20 orchestrator (slow)
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        env:
+          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+          PYFORGE_RUN_LARGE_BENCH: "1"
+          PYFORGE_RUN_RECORD_BENCH: "1"
+        run: |
+          for spec in benchmarks/runs/specs/*.yml; do
+            name=$(basename "${spec%.yml}")
+            uv run python benchmarks/runs/repeat.py \
+              --bench-spec "$spec" \
+              --num-runs 20 \
+              --output "benchmarks/results/n20/${name}_n20.json" \
+              || echo "WARN: orchestrator scenario $name failed; continuing"
+          done
+
+      # ==========================================================
+      # Optional flamegraph capture (manual workflow_dispatch only).
+      # py-spy needs ptrace privileges; ubuntu-latest runners have
+      # unprivileged ptrace enabled by default.
+      # ==========================================================
+      - name: Record flamegraphs (manual)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.record_flamegraphs == 'true'
+        env:
+          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          mkdir -p benchmarks/results/flamegraphs
+          # Driver scripts live in benchmarks/flamegraphs/ — Step 16c lands them.
+          # This step is a placeholder; ship as a no-op until 16c.
+          echo "flamegraph capture: 16c will populate benchmarks/flamegraphs/*.py"
+
+      # ==========================================================
+      # Always upload artifacts so the operator can pull bench JSON +
+      # regression-check report.
+      # ==========================================================
       - name: Upload benchmark artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results

@@ -1,0 +1,48 @@
+# Tier-2 regression gates — ENV-GATED.
+#
+# Consumed by ``benchmarks/regression/check.py --include-tier2``. Runs only
+# on push-to-main and ``workflow_dispatch`` (CI sets PYFORGE_RUN_LARGE_BENCH=1
+# and PYFORGE_RUN_RECORD_BENCH=1 for these). PRs run Tier-1 only.
+#
+# Schema: same as tier1.yml. See tier1.yml header for full doc.
+#
+# Membership rule: a bench appears in tier1.yml OR tier2.yml, NEVER both.
+# ``check.py::_load_thresholds`` raises ValueError on collision (L5 guard).
+#
+# What lives here vs Tier-1:
+#   - Heavy scales: 100k / 1M / 5M-row variants of benches that have a
+#     smoke variant in Tier-1.
+#   - PYFORGE_RUN_LARGE_BENCH=1 gates: 30s-2min benches.
+#   - PYFORGE_RUN_RECORD_BENCH=1 gates: 5min+ benches.
+#
+# What does NOT live here:
+#   - Tier-2 N=20 fresh-subprocess headline runs from
+#     ``benchmarks/runs/repeat.py`` produce committed JSON in
+#     ``benchmarks/results/n20/`` for human review + README quoting; they
+#     are NOT auto-gated in CI (per ADR-015 + plan §3.9 mitigation #3).
+
+# -----------------------------------------------------------------------
+# Step 12 — point-in-time reader (PYFORGE_RUN_LARGE_BENCH=1)
+# -----------------------------------------------------------------------
+test_read_pit_10k_pairs_5m_rows_100_field:
+  p99_seconds: 60.0             # 60 s — extrapolated from 500k bench
+
+# -----------------------------------------------------------------------
+# Step 13 — Hydration heavy variants (PYFORGE_RUN_LARGE_BENCH=1)
+# -----------------------------------------------------------------------
+test_hydrate_100k_50_field:
+  p99_seconds: 8.0              # 8 s — native target ~0.5-2s; 4x headroom
+test_hydrate_1m_200_field:
+  p99_seconds: 45.0             # 45 s — native target ~5-15s; 3x headroom
+
+# -----------------------------------------------------------------------
+# Step 15 — schema evolution heavy variants
+# -----------------------------------------------------------------------
+test_bench_upgrade_100k_50_field:
+  p99_seconds: 10.0             # 10 s — primary gate (PYFORGE_RUN_LARGE_BENCH=1)
+test_bench_upgrade_1m_50_field:
+  # SPEC ACCEPTANCE HARD GATE (PYFORGE_RUN_RECORD_BENCH=1): 1M rows x 50
+  # fields in <10s native Linux. Step 15 plan §5.5 trip-wire — if RED on
+  # native CI, Step 16 Numba translation kernel ships before declaring
+  # Step 16 complete (see ADR-015 §"Step 15 trip-wire resolution").
+  p99_seconds: 10.0             # 10 s
