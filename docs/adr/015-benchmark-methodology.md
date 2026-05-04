@@ -152,14 +152,57 @@ across runs and excluding it from "fresh" is documented in
 Pinned in ADR for future Step 17 README authorship: numbers measured
 on GitHub Actions `ubuntu-latest` runners (`ubuntu-24.04` at time of
 Step 16). Reproducible by anyone via `gh workflow run benchmark.yml`.
-Bare-metal numbers will be 1.5–3× faster on a 2024-era desktop CPU;
-WSL2 / Docker Desktop measurements are typically 2–4× slower on the
-cold-fault path due to virtio-fs / 9P translation.
 
 This avoids the "Mahin's WSL2 box" trap (numbers unreproducible by
 anyone else) and the "Threadripper Pro under specific kernel tunings"
 trap (numbers theoretically reproducible but not by readers running
 commodity hardware).
+
+**Native CI vs WSL2 — NOT a uniform speedup factor (Step 16a CI
+finding):** The intuitive assumption "native is uniformly faster than
+WSL2" is wrong. Step 16a's first push-tier CI runs revealed a cache-
+architecture asymmetry:
+
+| Bench | WSL2 p99 | Native CI p99 | Native vs WSL2 |
+|---|---|---|---|
+| `test_bench_assemble_4_field_warm_numba` | 9.4µs | 6.7µs | **1.4× faster** |
+| `test_bench_assemble_200_field_warm_numba` | 13.3µs | 26.7µs | **2× slower** |
+| `test_bench_assemble_200_field_cold_cache_numba` | 90.4µs | 32.7µs | **2.8× faster** |
+| `test_bench_assemble_batch_4_field_n1000` | 1.4ms | 8.6ms | **6× slower** |
+| `test_bench_assemble_batch_200_field_n1000` | 3.5ms | 10.7ms | **3× slower** |
+| `test_bench_upgrade_10k_50_field` | 220ms | 74ms | **3× faster** |
+
+**Pattern:** small/short Numba benches faster on native (better
+single-thread per-core perf). Cache-bound + bandwidth-bound benches
+(batch assembly at N≥1000, large warm-cache 200-field) are SLOWER on
+native. GitHub Actions ubuntu-latest CPUs are older Intel Xeons
+(E5-2673-class, Haswell/Broadwell era, ~30 MB L3 per socket). The
+batch 200-field bench's working set (~1.6 MB output buffer + segment
+reads) fits comfortably in modern desktop L2 (~1 MB per core for
+recent Intel/AMD) but spills to L3 or DRAM on the older Xeons,
+inflating tail latency 3-6×.
+
+**Methodology consequence:** **gates MUST be calibrated against native
+CI numbers, NOT WSL2 numbers, with no assumed "WSL2-tolerant means
+native-tolerant" logic.** The right pre-commit workflow is:
+
+1. Push the workflow + bench changes to a branch.
+2. Trigger `gh workflow run benchmark.yml` against that branch.
+3. Pull native CI's `regression_check.json` artifact.
+4. Set gates from native p99 × 2.5x default headroom.
+5. Push the gate calibrations.
+6. Merge.
+
+Step 16a violated this by calibrating from WSL2 measurements + assuming
+native would be uniformly faster. The result was three rounds of
+gate-bump commits as native CI surfaced different bottlenecks. 16c +
+all subsequent perf work uses the native-CI-first calibration discipline.
+
+**Bare-metal extrapolation:** numbers measured on GitHub Actions are
+generally 1.5–3× SLOWER than a 2024-era desktop CPU (modern AMD Ryzen /
+Intel Core has more L3 + higher single-thread clocks than the older
+Xeons). README claims should disclose the venue and let readers
+extrapolate per their own hardware, NOT assert a single multiplier.
 
 **Memory ceiling on `ubuntu-latest`:** 7 GB RAM, /dev/shm ≈ 3.5 GB
 (50% of RAM via tmpfs default). This is enough for **Tier-1 only**

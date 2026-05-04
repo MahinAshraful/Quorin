@@ -134,11 +134,19 @@ test_bench_assemble_p999_under_gc_pressure_4_field:
 # automation; see plan §3.3 row 4).
 # -----------------------------------------------------------------------
 test_bench_assemble_batch_4_field_n1000:
-  # WSL2-tolerant. Run 0002 2026-05-04 p99 9279.9us; old 5ms gate was median-
-  # calibrated. Native-Linux baseline tightens in 16c.
-  p99_seconds: 0.020            # 20ms = ~2.2x WSL2 measured 9.28ms p99
+  # NATIVE CI calibrated. Run 8ded974 2026-05-04 native CI p99 8557us;
+  # WSL2 was 9.28ms (older Step 16a sweep). 20ms = ~2.3x native p99.
+  # Native is similar speed to WSL2 here.
+  p99_seconds: 0.020            # 20ms = ~2.3x native CI 8.56ms p99
 test_bench_assemble_batch_200_field_n1000:
-  p99_seconds: 0.010            # 10 ms — N=1000 200-field; passing at WSL2 5430us p99
+  # NATIVE CI calibrated, BUMPED post-first-fail. Run 8ded974 native CI
+  # p99 10742us; the prior 10ms gate was set on WSL2 (3.5ms p99) under the
+  # false assumption that native would be uniformly faster. Native CI is
+  # actually 3x SLOWER on this bench — cache-bound + bandwidth-bound
+  # workload, GitHub Actions ubuntu-latest Xeons have smaller L3 than
+  # modern desktops. ADR-015 §7 amended with the cache-architecture
+  # finding.
+  p99_seconds: 0.025            # 25ms = ~2.3x native CI 10.74ms p99
 # Plan §3.3 row 4 originally called for a batch-ratio gate
 # (test_bench_batch_ratio_n1000_vs_n1_4_field) that would record a RATIO
 # between two bench paths. Same constraint as the pool head-to-head below:
@@ -201,9 +209,14 @@ test_row_pack_200_field:
 test_row_pack_200_scalar_only:
   p99_seconds: 0.00003          # 30 us — passing at WSL2 14.4us p99
 test_consumer_apply_per_msg_50_field:
-  p99_seconds: 0.0001           # 100 us — measured ~10 us median
+  p99_seconds: 0.0001           # 100 us — passing at native CI 55.9us p99 (1.79x margin; borderline but holding)
 test_consumer_apply_per_msg_200_field:
-  p99_seconds: 0.0001           # 100 us — measured ~21 us median, 128-emb shaped
+  # BUMPED post-Step-16a-CI: native CI run 8ded974 measured p99 85.6us —
+  # only 1.17x margin against the 100us gate, will flake within 1-3 CI
+  # runs on normal variance. The 128-emb shaped row_pack work has more
+  # tail variance on native than on WSL2 (cache architecture per ADR-015
+  # §7). 200us = ~2.3x native p99.
+  p99_seconds: 0.0002           # 200us = ~2.3x native CI 85.6us p99
 
 # -----------------------------------------------------------------------
 # Step 11 — ParquetDatasetStore. flush gates are placeholders set at
@@ -213,7 +226,12 @@ test_consumer_apply_per_msg_200_field:
 # numbers; tightening lands in 16c after canonical native baseline.
 # -----------------------------------------------------------------------
 test_append_per_msg_200_field:
-  p99_seconds: 0.00002          # 20 us — measured ~6 us; bench detects 2x regression
+  # BUMPED post-Step-16a-CI: WSL2 measured ~6us (median-calibrated 20us
+  # gate had 3.3x headroom on WSL2). Native CI run 8ded974 measured
+  # p99 18.9us — only 1.06x margin against the 20us gate, will flake on
+  # any normal CI variance. Native CI is slower on this bench than WSL2
+  # (different cache architecture per ADR-015 §7). 50us = ~2.6x native p99.
+  p99_seconds: 0.00005          # 50us = ~2.6x native CI 18.9us p99
 test_flush_10k_rows_50_field:
   p99_seconds: 0.3              # 300 ms — 4x WSL2 max ~66 ms (placeholder)
 test_flush_10k_rows_200_field:
