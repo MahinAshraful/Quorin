@@ -197,9 +197,18 @@ jobs:
         # without a status function, so a SIGBUS upstream cascades through
         # all downstream steps. Run #31 caught this: LARGE+RECORD SIGBUSed
         # and MADV got skipped, leaving no madv_ab.json artifact.
+        #
+        # Step 16b Rev-10: clean /dev/shm pollution from prior workflow
+        # steps before running. Run #34 caught this: an upstream SIGBUS
+        # in 100k hydration left ~51 pyforge_* segments behind, filling
+        # /dev/shm; the orchestrator's subprocesses then SIGBUSed at
+        # posix_shm.create() because no room. CI-only cleanup (workflow
+        # YAML, not orchestrator) so operator workstation runs don't
+        # accidentally unlink segments held by other live processes.
         if: always() && github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: |
+          rm -f /dev/shm/pyforge_* || true
           uv run python benchmarks/runs/step16_madvise_ab.py \
             --num-runs 20 \
             --output benchmarks/results/madv_ab.json
