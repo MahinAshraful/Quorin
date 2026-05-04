@@ -41,6 +41,16 @@ def _mp_context() -> multiprocessing.context.BaseContext:
     return multiprocessing.get_context("fork")
 
 
+# Step 15 stub registry — chaos tests don't trigger pause-clear reopen.
+def _stub_registry() -> object:
+    from typing import cast as _cast
+    from unittest.mock import Mock as _Mock
+
+    from pyforge.shm import SegmentRegistry
+
+    return _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
+
+
 def _kill_after_n_apply_subprocess(
     seg_name: str,
     schema_dotted: str,
@@ -54,6 +64,8 @@ def _kill_after_n_apply_subprocess(
     pending_ack reaches ``kill_after_n``.
     """
     import importlib
+    from typing import cast as _cast
+    from unittest.mock import Mock as _Mock
 
     import redis.asyncio
 
@@ -74,10 +86,14 @@ def _kill_after_n_apply_subprocess(
     del HEADER_LEN  # silence import-only warning
 
     async def main() -> None:
+        from pyforge.shm import SegmentRegistry
+
+        _stub_reg = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
         client = redis.asyncio.Redis.from_url(redis_url, decode_responses=False)
         consumer = WALConsumer(
             client,
             segments={schema.__name__: seg},
+            registry=_stub_reg,
             consumer_name=consumer_name,
             block_ms=50,
             flush_interval_seconds=300.0,
@@ -183,6 +199,7 @@ def _run_one_chaos_iteration(redis_url: str, kill_after_n: int) -> None:
                 c = WALConsumer(
                     ar,
                     segments={_ChaosCS.__name__: seg},
+                    registry=_stub_registry(),  # type: ignore[arg-type]
                     consumer_name="chaos-consumer",
                     block_ms=50,
                     flush_interval_seconds=10.0,

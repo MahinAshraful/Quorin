@@ -36,6 +36,17 @@ def _mp_context() -> multiprocessing.context.BaseContext:
     return multiprocessing.get_context("fork")
 
 
+# Step 15 stub registry for parent-process WALConsumer constructions in
+# chaos tests. The pause-clear reopen branch isn't exercised here.
+def _stub_registry() -> object:
+    from typing import cast as _cast
+    from unittest.mock import Mock as _Mock
+
+    from pyforge.shm import SegmentRegistry
+
+    return _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
+
+
 def _kill_after_n_apply_with_offline_subprocess(
     seg_name: str,
     schema_dotted: str,
@@ -46,13 +57,17 @@ def _kill_after_n_apply_with_offline_subprocess(
 ) -> None:
     """Subprocess body. Module-level so fork() can pickle it."""
     import importlib
+    from typing import cast as _cast
+    from unittest.mock import Mock as _Mock
 
     import redis.asyncio
 
     from pyforge._internal import posix_shm
     from pyforge.layout import compute_layout_from_segment
     from pyforge.offline import ParquetDatasetStore
-    from pyforge.shm import Segment
+    from pyforge.shm import Segment, SegmentRegistry
+
+    _stub_registry_local = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
     from pyforge.wal_consumer import WALConsumer
 
     mod_name, _, cls_name = schema_dotted.rpartition(".")
@@ -68,6 +83,7 @@ def _kill_after_n_apply_with_offline_subprocess(
         consumer = WALConsumer(
             client,
             segments={schema.__name__: seg},
+            registry=_stub_registry_local,
             offline=offline,
             consumer_name=consumer_name,
             block_ms=50,
@@ -195,6 +211,7 @@ def _run_one_offline_chaos_iteration(redis_url: str, base_path: Path, kill_after
                 c = WALConsumer(
                     ar,
                     segments={_ChaosOff.__name__: seg},
+                    registry=_stub_registry(),  # type: ignore[arg-type]
                     offline=offline_recover,
                     consumer_name="chaos-offline-consumer",
                     block_ms=50,

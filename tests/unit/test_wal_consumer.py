@@ -21,6 +21,9 @@ pytestmark = pytest.mark.skipif(
     reason="WAL consumer relies on POSIX shared-memory paths",
 )
 
+from typing import cast as _cast  # noqa: E402
+from unittest.mock import Mock as _Mock  # noqa: E402
+
 import redis.exceptions  # noqa: E402
 
 from _helpers import make_segment, release_segment  # noqa: E402
@@ -30,6 +33,7 @@ from pyforge._internal.pydantic_factory import (  # noqa: E402
 from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
 from pyforge.layout import lookup  # noqa: E402
 from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from pyforge.shm import SegmentRegistry  # noqa: E402
 from pyforge.wal import (  # noqa: E402
     _F_BLOB,
     _F_ENTITY_ID,
@@ -42,6 +46,12 @@ from pyforge.wal_consumer import (  # noqa: E402
     NoopOfflineWriter,
     WALConsumer,
 )
+
+# Step 15 stub registry for unit tests. Unit tests never exercise the
+# pause-cleared reopen branch (which is the only place self._registry is
+# dereferenced); a Mock with the right spec is sufficient. Integration/chaos
+# tests use a real SegmentRegistry constructed against the real Redis.
+_STUB_REGISTRY: SegmentRegistry = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
 
 # ---------------------------------------------------------------------------
 # Schemas.
@@ -135,6 +145,11 @@ class AsyncFakeRedis:
 
     async def get(self, key: bytes) -> bytes | None:
         return self._kv.get(key)
+
+    async def mget(self, *keys: bytes) -> list[bytes | None]:
+        # Step 15 pause-check uses mget across pause keys; stub returns
+        # None for any unset key (matches redis-py async semantics).
+        return [self._kv.get(k) for k in keys]
 
     async def delete(self, *keys: bytes) -> int:
         n = 0
@@ -285,6 +300,7 @@ def consumer(fake_redis: AsyncFakeRedis, segment: Any) -> WALConsumer:
     return WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
     )
 
 
@@ -327,6 +343,7 @@ def test_init_raises_when_segments_key_does_not_match_schema_name(
         WALConsumer(
             fake_redis,  # type: ignore[arg-type]
             segments={"WrongName": segment},
+            registry=_STUB_REGISTRY,
         )
 
 
@@ -461,6 +478,7 @@ async def test_flush_failure_keeps_pending_intact(fake_redis: AsyncFakeRedis, se
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
         offline=RaisingOffline(),
     )
     fields = _wire_msg("_S", "u1", _values_for_S(1.0, 2, [0, 0, 0, 0]))
@@ -481,10 +499,10 @@ async def test_flush_failure_keeps_pending_intact(fake_redis: AsyncFakeRedis, se
 async def test_consumer_name_lock_prevents_duplicate_consumers(
     fake_redis: AsyncFakeRedis, segment: Any
 ) -> None:
-    c1 = WALConsumer(fake_redis, segments={"_S": segment})  # type: ignore[arg-type]
+    c1 = WALConsumer(fake_redis, segments={"_S": segment}, registry=_STUB_REGISTRY)  # type: ignore[arg-type]
     await c1._acquire_consumer_lock()
     try:
-        c2 = WALConsumer(fake_redis, segments={"_S": segment})  # type: ignore[arg-type]
+        c2 = WALConsumer(fake_redis, segments={"_S": segment}, registry=_STUB_REGISTRY)  # type: ignore[arg-type]
         with pytest.raises(ConsumerNameInUseError, match="held by pid"):
             await c2._acquire_consumer_lock()
     finally:
@@ -501,6 +519,7 @@ async def test_stop_exits_run_loop_and_finalizes(fake_redis: AsyncFakeRedis, seg
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
         block_ms=10,  # short BLOCK so the loop exits quickly
         flush_interval_seconds=10.0,
     )
@@ -535,6 +554,7 @@ async def test_soft_size_trigger_signals_without_blocking(
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
         max_pending_ack=5,
     )
     # Pre-fill pending_ack to 4 entries via direct apply, then a 5-msg batch
@@ -565,6 +585,7 @@ async def test_hard_ceiling_blocks_reads_until_drain(
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
         max_pending_ack=2,
     )
     # Pre-fill pending_ack to >= 2 * 2 = 4 entries.
@@ -638,6 +659,7 @@ async def test_flush_loop_wakes_on_signal(fake_redis: AsyncFakeRedis, segment: A
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
         offline=CountingOffline(),
         flush_interval_seconds=10.0,  # long timer; won't fire
         max_pending_ack=1,
@@ -724,6 +746,7 @@ async def test_liveness_gauge_does_not_read_system_uptime_at_startup(
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]
         segments={"_S": segment},
+        registry=_STUB_REGISTRY,
     )
 
     # Manually replicate run()'s force-first-refresh startup block so

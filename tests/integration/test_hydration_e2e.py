@@ -251,6 +251,7 @@ async def _run_producer_consumer_pipeline(
         consumer = WALConsumer(
             async_redis,  # type: ignore[arg-type]
             segments={"_IntHydrate": seg},
+            registry=registry,
             offline=parquet_store,
             consumer_name=f"hydrate-int-{consumer_name_suffix}",
             block_ms=consumer_block_ms,
@@ -364,6 +365,7 @@ async def test_e2_hydrate_count_matches_parquet_row_count_not_producer_count(
         consumer = WALConsumer(
             async_redis,  # type: ignore[arg-type]
             segments={"_IntHydrate": seg},
+            registry=registry,
             offline=parquet_store,
             consumer_name="hydrate-int-e2",
             block_ms=50,
@@ -443,6 +445,7 @@ async def test_e3_hydrate_refuses_when_consumer_alive_real_redis(
         consumer = WALConsumer(
             async_redis,  # type: ignore[arg-type]
             segments={"_IntHydrate": seg},
+            registry=registry,
             offline=parquet_store,
             consumer_name="hydrate-int-e3",
             block_ms=50,
@@ -557,6 +560,7 @@ async def test_e5_hydrate_as_of_time_excludes_future_writes(
         consumer = WALConsumer(
             async_redis,  # type: ignore[arg-type]
             segments={"_IntHydrate": seg},
+            registry=registry,
             offline=parquet_store,
             consumer_name="hydrate-int-e5",
             block_ms=50,

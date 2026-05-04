@@ -26,6 +26,9 @@ pytestmark = [
     ),
 ]
 
+from typing import cast as _cast  # noqa: E402
+from unittest.mock import Mock as _Mock  # noqa: E402
+
 import pyarrow.dataset as ds  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
 import redis  # noqa: E402
@@ -37,8 +40,14 @@ from pyforge._internal.pydantic_factory import clear_cache as clear_pydantic_cac
 from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
 from pyforge.offline import ParquetDatasetStore  # noqa: E402
 from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from pyforge.shm import SegmentRegistry  # noqa: E402
 from pyforge.wal import DEFAULT_STREAM_KEY, WALProducer  # noqa: E402
 from pyforge.wal_consumer import WALConsumer  # noqa: E402
+
+# Step 15 stub registry — these tests don't exercise the upgrade pause-clear
+# branch (the only place self._registry is dereferenced), so a Mock with the
+# right spec is sufficient. Real upgrade tests live in test_evolution_e2e.py.
+_STUB_REGISTRY: SegmentRegistry = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
 
 
 class _IntE2E(FeatureSchema):
@@ -112,6 +121,7 @@ async def test_full_pipeline_produces_parquet_files(
     consumer = WALConsumer(
         async_redis,
         segments={"_IntE2E": segment},
+        registry=_STUB_REGISTRY,
         offline=offline,
         consumer_name="offline-e2e-1",
         block_ms=50,
@@ -171,6 +181,7 @@ async def test_consumer_restart_does_not_double_write(
     consumer_a = WALConsumer(
         async_redis,
         segments={"_IntE2E": segment},
+        registry=_STUB_REGISTRY,
         offline=offline_a,
         consumer_name="offline-restart-1",
         block_ms=50,
@@ -202,6 +213,7 @@ async def test_consumer_restart_does_not_double_write(
     consumer_b = WALConsumer(
         async_redis,
         segments={"_IntE2E": segment},
+        registry=_STUB_REGISTRY,
         offline=offline_b,
         consumer_name="offline-restart-1",  # same group/consumer name
         block_ms=50,
@@ -252,6 +264,7 @@ async def test_full_pipeline_producer_to_reader(
     consumer = WALConsumer(
         async_redis,
         segments={"_IntE2E": segment},
+        registry=_STUB_REGISTRY,
         offline=offline,
         consumer_name="offline-reader-1",
         block_ms=50,

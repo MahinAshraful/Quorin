@@ -24,6 +24,9 @@ pytestmark = [
     ),
 ]
 
+from typing import cast as _cast  # noqa: E402
+from unittest.mock import Mock as _Mock  # noqa: E402
+
 import redis  # noqa: E402
 import redis.asyncio  # noqa: E402
 
@@ -33,6 +36,7 @@ from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # no
 from pyforge.layout import lookup  # noqa: E402
 from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 from pyforge.serving import assemble  # noqa: E402
+from pyforge.shm import SegmentRegistry  # noqa: E402
 from pyforge.wal import (  # noqa: E402
     DEFAULT_STREAM_KEY,
     PROCESSED_KEY_PREFIX,
@@ -44,6 +48,11 @@ from pyforge.wal_consumer import (  # noqa: E402
     NoopOfflineWriter,
     WALConsumer,
 )
+
+# Step 15 stub registry — these tests don't trigger the upgrade pause-clear
+# branch; a Mock with the right spec is sufficient. See test_evolution_e2e.py
+# for tests that exercise the real registry-driven reopen path.
+_STUB_REGISTRY: SegmentRegistry = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
 
 # ---------------------------------------------------------------------------
 # Test schema.
@@ -134,6 +143,7 @@ async def test_producer_to_consumer_full_drain(
     consumer = WALConsumer(
         async_redis,
         segments={"_IntCS": segment},
+        registry=_STUB_REGISTRY,
         consumer_name="int-test-1",
         block_ms=50,
         flush_interval_seconds=10.0,
@@ -187,6 +197,7 @@ async def test_write_sync_unblocks_when_consumer_processes(
     consumer = WALConsumer(
         async_redis,
         segments={"_IntCS": segment},
+        registry=_STUB_REGISTRY,
         consumer_name="int-test-2",
         block_ms=50,
     )
@@ -244,10 +255,17 @@ async def test_consumer_name_conflict_raises(
     async_redis: redis.asyncio.Redis,
     segment,
 ) -> None:
-    c1 = WALConsumer(async_redis, segments={"_IntCS": segment}, consumer_name="conflict")
+    c1 = WALConsumer(
+        async_redis, segments={"_IntCS": segment}, registry=_STUB_REGISTRY, consumer_name="conflict"
+    )
     await c1._acquire_consumer_lock()
     try:
-        c2 = WALConsumer(async_redis, segments={"_IntCS": segment}, consumer_name="conflict")
+        c2 = WALConsumer(
+            async_redis,
+            segments={"_IntCS": segment},
+            registry=_STUB_REGISTRY,
+            consumer_name="conflict",
+        )
         with pytest.raises(ConsumerNameInUseError):
             await c2._acquire_consumer_lock()
     finally:
@@ -284,6 +302,7 @@ async def test_deferred_xack_pel_survives_run_restart(
     c1 = WALConsumer(
         async_redis,
         segments={"_IntCS": segment},
+        registry=_STUB_REGISTRY,
         offline=StuckOffline(),
         consumer_name="durab-1",
         block_ms=50,
@@ -317,6 +336,7 @@ async def test_deferred_xack_pel_survives_run_restart(
     c2 = WALConsumer(
         async_redis,
         segments={"_IntCS": segment},
+        registry=_STUB_REGISTRY,
         consumer_name="durab-1",  # same name; lock has been released
         block_ms=50,
         flush_interval_seconds=10.0,
@@ -355,6 +375,7 @@ async def test_same_entity_twice_last_write_wins(
     consumer = WALConsumer(
         async_redis,
         segments={"_IntCS": segment},
+        registry=_STUB_REGISTRY,
         consumer_name="last-write",
         block_ms=50,
         max_pending_ack=2,

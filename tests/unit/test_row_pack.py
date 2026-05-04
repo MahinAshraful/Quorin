@@ -502,3 +502,41 @@ def test_shape_1_treated_as_shaped_not_scalar() -> None:
     out = bytearray(row_size(_Shape1))
     pack_row_from_list(_Shape1, [[3.14]], out)
     assert _read_field(out, _Shape1, "v") == np.float32(3.14)
+
+
+# ---------------------------------------------------------------------------
+# Step 15 regression: poison-pill defense depends on length-mismatch raise.
+# Locks the consumer-side defense in pyforge.wal_consumer._apply.
+# ---------------------------------------------------------------------------
+
+
+class _LenMismatchSchema(FeatureSchema):
+    version = 1
+    fields = [
+        FeatureField("a", dtype.float32),
+        FeatureField("b", dtype.float32),
+        FeatureField("c", dtype.float32),
+    ]
+
+
+def test_pack_row_from_list_rejects_length_mismatch() -> None:
+    """Step 15 poison-pill defense: a stale producer wrote with OLD schema
+    (fewer values); consumer with NEW schema must reject the message
+    rather than silently pad.
+
+    If this test ever fails, the WAL consumer's `_apply` poison-pill catch
+    will not fire and stale messages will silently corrupt the new
+    segment with garbage values. ADR-014 §"Consumer-side defense".
+    """
+    out = bytearray(row_size(_LenMismatchSchema))
+    # 2 values for a 3-field schema — too short.
+    with pytest.raises(ValueError, match="expected 3 values, got 2"):
+        pack_row_from_list(_LenMismatchSchema, [1.0, 2.0], out)
+
+
+def test_pack_row_from_list_rejects_too_many_values() -> None:
+    """Symmetric to the under-count case — a future producer downgrade
+    sending more values than the schema declares should also be rejected."""
+    out = bytearray(row_size(_LenMismatchSchema))
+    with pytest.raises(ValueError, match="expected 3 values, got 4"):
+        pack_row_from_list(_LenMismatchSchema, [1.0, 2.0, 3.0, 4.0], out)

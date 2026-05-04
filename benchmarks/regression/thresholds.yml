@@ -192,3 +192,22 @@ benchmarks:
   # lotted for Step 16 if flamegraphs surface it.
   watchdog_tick_idle_100_pids:
     p99_seconds: 0.020       # 20 ms — measured median ~5 ms on WSL2.
+  # Step 15 — schema evolution.
+  # Smoke (always-on): 10k rows x 50 fields. ~3-5x WSL2 measured baseline.
+  upgrade_10k_50_field:
+    p99_seconds: 5.0        # 5s — generous WSL2 ceiling
+  # Primary gate (PYFORGE_RUN_LARGE_BENCH=1): 100k rows x 50 fields.
+  # 5x headroom over the 1M / 10s spec gate at 100k scale.
+  upgrade_100k_50_field:
+    p99_seconds: 10.0       # 10s
+  # Spec acceptance HARD GATE (PYFORGE_RUN_RECORD_BENCH=1): 1M rows x
+  # 50 fields in <10s native Linux. Plan §5.5 trip-wire — if RED, Step 16
+  # Numba translation kernel ships before Step 15 is declared complete.
+  upgrade_1m_50_field:
+    p99_seconds: 10.0       # 10s — spec acceptance
+  # Consumer pause-check overhead: per-iter MGET on 10 pause keys when
+  # NO pause is set (the no-pause fast path through
+  # _check_upgrade_pause_and_reopen). Validates the safety-net doesn't
+  # tank consumer throughput in steady state.
+  consumer_pause_overhead:
+    p99_seconds: 0.001       # 1 ms upper bound for 10-key MGET round-trip

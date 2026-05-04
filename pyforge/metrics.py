@@ -329,6 +329,65 @@ watchdog_pid_reuse_abort_total = Counter(
     registry=registry,
 )
 
+# Schema evolution (Step 15). Precondition rejections (UpgradeConflictError /
+# UpgradeIncompatibleError raised before the timed section) are NOT counted in
+# `evolution_seconds` — they represent rejected calls, not failed work. Same
+# "ok | err" labelling as hydration.
+evolution_seconds = Histogram(
+    "pyforge_evolution_seconds",
+    "Wall-clock time per upgrade_schema() call that reached the timed section. "
+    "Excludes precondition rejections.",
+    labelnames=("outcome",),  # ok | err
+    buckets=(0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 300.0),
+    registry=registry,
+)
+
+evolution_entity_count = Histogram(
+    "pyforge_evolution_entity_count",
+    "Entities translated per successful upgrade_schema() call.",
+    buckets=(1, 100, 10_000, 100_000, 1_000_000, 10_000_000),
+    registry=registry,
+)
+
+evolution_consumer_pause_seconds = Histogram(
+    "pyforge_evolution_consumer_pause_seconds",
+    "Wall-clock duration the WAL consumer was parked due to a Step 15 upgrade "
+    "pause-key. Operators alert on p99 > 30s — long pauses suggest a stuck "
+    "orchestrator or insufficient WAL drain before upgrade.",
+    buckets=(0.1, 0.5, 1.0, 5.0, 30.0, 60.0),
+    registry=registry,
+)
+
+evolution_consumer_attach_seconds = Histogram(
+    "pyforge_evolution_consumer_attach_seconds",
+    "Wall-clock duration the upgrade orchestrator waited for the first consumer "
+    "to attach to the new segment after the flip. Bucketed up to wait_seconds "
+    "default (60s); a count near the 60s ceiling means the orchestrator timed "
+    "out and the new segment is at risk of being reaped by the watchdog.",
+    buckets=(0.1, 1.0, 5.0, 30.0, 60.0),
+    registry=registry,
+)
+
+# WAL consumer Step 15 cross-step touches. Both fire from
+# `pyforge.wal_consumer._run_one_iter` (segment reopen on pause-clear) and
+# `_apply` (poison-pill on stale producer message).
+wal_consumer_schema_crc_mismatch_total = Counter(
+    "pyforge_wal_consumer_schema_crc_mismatch_total",
+    "WAL consumer's reopen after upgrade-pause-clear failed because its "
+    "cached schema class is stale (CRC mismatch on new segment). Operator "
+    "must restart the consumer with new schema code. Alert on > 0.",
+    registry=registry,
+)
+
+wal_consumer_poison_pill_total = Counter(
+    "pyforge_wal_consumer_poison_pill_total",
+    "WAL message rejected by `pack_row_from_list` because a stale producer "
+    "wrote with old schema during the upgrade window. Message stays in PEL "
+    "(not XACKed) so XPENDING reflects it. Alert on > 0 correlated with "
+    "non-empty PEL — operator restarts producer with new schema code.",
+    registry=registry,
+)
+
 # Pre-warm Histogram/Counter label children at module load so the first
 # observe() inside a timed/locked section doesn't pay the tuple-key + dict-slot
 # allocation cost (Step 7 GC lesson — see CLAUDE.md §8 "GC callback bodies
@@ -345,6 +404,8 @@ watchdog_segments_unlinked_total.labels(path="dead_pid")
 watchdog_segments_unlinked_total.labels(path="cleanup_queue")
 watchdog_cross_check_unverifiable_total.labels(reason="access_denied")
 watchdog_cross_check_unverifiable_total.labels(reason="zombie")
+evolution_seconds.labels(outcome="ok")
+evolution_seconds.labels(outcome="err")
 
 
 def start_metrics_server(port: int = 9100) -> None:

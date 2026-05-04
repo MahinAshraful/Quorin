@@ -181,9 +181,21 @@ class SegmentRegistry:
         *,
         capacity: int,
         max_id_bytes: int = DEFAULT_MAX_ID_BYTES,
+        set_current: bool = True,
     ) -> Segment:
         """Allocate a new multi-entity segment for ``schema`` with the given
         ``capacity`` and per-ID byte budget.
+
+        Args:
+            set_current: If ``True`` (default; matches Step 1-14 behavior),
+                the create pipeline writes ``pyforge:schema:{safe_name}:current``
+                to the new segment's name, making the segment immediately
+                visible to ``open_current``. Step 15 schema evolution passes
+                ``False`` so it can populate the new segment via
+                ``insert_many`` and only then atomically flip ``schema:current``
+                via the CAS Lua script — without a window where consumers see
+                the new segment empty. All other pipeline ops (refcount,
+                pid_segments SADD, sidetable HSET) run unchanged.
 
         On any failure after :func:`posix_shm.create` succeeds, the segment is
         released and unlinked so ``/dev/shm`` does not leak.
@@ -211,7 +223,12 @@ class SegmentRegistry:
 
             pid = os.getpid()
             with self._redis.pipeline(transaction=True) as p:
-                p.set(_key_current(schema), name)
+                # Step 15: set_current=False omits the schema:current write so
+                # an upgrade orchestrator can populate the new segment before
+                # exposing it. All other ops are unchanged so refcount /
+                # pid_segments / sidetable invariants hold either way.
+                if set_current:
+                    p.set(_key_current(schema), name)
                 p.set(_key_refcount(name), 1)
                 p.sadd(_key_pid_segments(pid), name)
                 # Step 14: sidetable so the watchdog (and the close-Lua

@@ -80,15 +80,24 @@ from pyforge import layout
 from pyforge._internal.row_pack import pack_row_from_list
 from pyforge.logging import get_logger
 from pyforge.metrics import (
+    evolution_consumer_pause_seconds,
     wal_consumer_apply_total,
     wal_consumer_batch_size,
     wal_consumer_flush_seconds,
     wal_consumer_liveness_age_seconds,
     wal_consumer_liveness_refresh_failures,
     wal_consumer_pending_ack_size,
+    wal_consumer_poison_pill_total,
+    wal_consumer_schema_crc_mismatch_total,
     wal_consumer_unknown_schema_total,
 )
 from pyforge.schema import FeatureSchema, row_size
+from pyforge.shm import (
+    SchemaCRCMismatchError,
+    SegmentNotFoundError,
+    SegmentRegistry,
+    _safe_class_name,
+)
 from pyforge.wal import (
     _F_BLOB,
     _F_ENTITY_ID,
@@ -223,6 +232,13 @@ class WALConsumer:
         offline: An :class:`OfflineWriter` implementation. ``None`` ⇒
             :class:`NoopOfflineWriter` (online-only mode; safe for
             development and online-only deployments).
+        registry: The :class:`pyforge.shm.SegmentRegistry` that opened
+            the segments above. Step 15 SAFETY-NET: when a Step 15
+            upgrade-pause clears, the consumer calls
+            ``registry.open_current(schema_class)`` to swap in the new
+            segment. REQUIRED — no ``None`` default by design (allowing
+            callers to skip would mean "production without the safety
+            net we shipped"). See ADR-014.
         stream_key: Redis Stream key. Default matches the producer.
         group_name / consumer_name: Consumer-group identity. Two
             consumers with the same ``consumer_name`` cause silent PEL
@@ -252,8 +268,10 @@ class WALConsumer:
         "_c_apply_dup",
         "_c_apply_err",
         "_c_apply_ok",
+        "_c_crc_mismatch",
         "_c_liveness_err",
         "_c_liveness_ok",
+        "_c_poison_pill",
         "_consumer_name",
         "_flush_interval_seconds",
         "_flush_now",
@@ -264,9 +282,11 @@ class WALConsumer:
         "_lock_key",
         "_max_pending_ack",
         "_offline",
+        "_pause_key_prefix_b",
         "_pending_ack",
         "_pid_str",
         "_redis",
+        "_registry",
         "_row_buffers",
         "_schemas",
         "_seen_unknown",
@@ -281,6 +301,7 @@ class WALConsumer:
         segments: Mapping[str, Any],
         offline: OfflineWriter | None = None,
         *,
+        registry: SegmentRegistry,
         stream_key: bytes = DEFAULT_STREAM_KEY,
         group_name: str = DEFAULT_GROUP_NAME,
         consumer_name: str = DEFAULT_CONSUMER_NAME,
@@ -299,6 +320,13 @@ class WALConsumer:
                 )
 
         self._redis = redis_client
+        # Step 15: registry is a REQUIRED kwarg (no None default by design —
+        # the safety-net pause+reopen logic depends on it; allowing callers
+        # to skip would mean "production runs without the safety net we
+        # shipped"). Holds the SegmentRegistry that opened the segments
+        # passed in via the `segments` kwarg; used only to reopen segments
+        # after a Step 15 upgrade-pause clears.
+        self._registry = registry
         # Wire keys are bytes; key the per-schema dicts on bytes for hot-path
         # zero-allocation lookup.
         self._segments: dict[bytes, Any] = {
@@ -311,6 +339,11 @@ class WALConsumer:
             name.encode("utf-8"): bytearray(row_size(seg.schema)) for name, seg in segments.items()
         }
         self._offline = offline if offline is not None else NoopOfflineWriter()
+        # Step 15 pause-key prefix: pyforge:upgrade:pause:{safe_class_name}.
+        # The `_check_upgrade_pause` MGET builds full keys per-schema using
+        # _safe_class_name on the schema class name (matches Step 14's key
+        # convention).
+        self._pause_key_prefix_b = b"pyforge:upgrade:pause:"
 
         self._stream_key = stream_key
         self._group_name = group_name
@@ -343,6 +376,11 @@ class WALConsumer:
         self._h_flush_err = wal_consumer_flush_seconds.labels(outcome="error")
         self._c_liveness_ok = wal_consumer_liveness_refresh_failures.labels(outcome="ok")
         self._c_liveness_err = wal_consumer_liveness_refresh_failures.labels(outcome="error")
+        # Step 15 counters — no labels, but stash references so the hot path
+        # avoids the global lookup. Counter doesn't require .labels() for
+        # label-less counters but the attr-access pattern stays uniform.
+        self._c_poison_pill = wal_consumer_poison_pill_total
+        self._c_crc_mismatch = wal_consumer_schema_crc_mismatch_total
 
         # Liveness state — `_pid_str` and `_liveness_last_refresh` are
         # re-seeded at run() startup (force-first-refresh pattern) so the
@@ -432,8 +470,19 @@ class WALConsumer:
         time. Plan §"sub-step 8" locks this to "post-XREADGROUP, pre-apply,
         unconditional on message count" so quiet streams with long
         ``block_ms`` still see the 10s refresh cadence.
+
+        Step 15 pause-check: post-XREADGROUP, pre-liveness. If any schema
+        we serve is mid-upgrade (pause key set), drain pending+ack and
+        park in :meth:`_park_during_upgrade` until the pause clears, then
+        reopen segments and skip the rest of this iter. This is the
+        SAFETY NET path — the supported workflow drains the consumer
+        before upgrade so the pause check is a no-op.
         """
         msgs = await self._read_new_batch()
+
+        # Step 15: pause-check (cheap MGET; ~50-100µs at N≤10 schemas).
+        if await self._check_upgrade_pause_and_reopen(msgs):
+            return  # paused-and-handled; outer loop will call us again.
 
         # Update age gauge EVERY loop iter so it climbs naturally during
         # Redis outages (when SETs fail and `_liveness_last_refresh` does
@@ -465,6 +514,148 @@ class WALConsumer:
 
         if msgs:
             await self._process_batch(msgs)
+
+    async def _check_upgrade_pause_and_reopen(self, _msgs: object) -> bool:  # noqa: PLR0912 (sequential reopen branches)
+        """Step 15 SAFETY-NET pause check. Returns True if paused-and-handled.
+
+        Workflow: build pause-key list (one per schema in `_segments`), MGET
+        in one round-trip. If none set, return False (fast path; ~50-100µs).
+        If any set:
+
+        1. Drain pending_ack via flush_and_ack so the online-store side is
+           durable BEFORE we park. (Offline side already flushed via flush
+           task or the pre-park flush_and_ack.)
+        2. Loop: 1s sleep → if stop_event, return True; else MGET → if any
+           still set, refresh liveness inline (10s gating) and continue;
+           else break.
+        3. Pause cleared. For each schema, attempt registry.close(old) +
+           registry.open_current(class). If CRC mismatches (consumer's
+           cached class is stale relative to new segment), log + bump
+           `_c_crc_mismatch` + set `_stop_event` + return True (consumer
+           parks indefinitely; operator restart needed).
+        4. Otherwise replace `_segments[name]` and `_row_buffers[name]`
+           with the freshly-opened segment. Observe pause duration.
+
+        Returns True in all paused branches so the caller skips the
+        liveness/process logic for this iter (fresh iter will re-evaluate).
+        Returns False on the no-pause fast path.
+        """
+        if not self._segments:
+            return False
+
+        pause_keys = [
+            self._pause_key_prefix_b + _safe_class_name(name.decode("utf-8")).encode("utf-8")
+            for name in self._segments
+        ]
+        pause_vals = await self._redis.mget(*pause_keys)
+        if not any(v is not None for v in pause_vals):
+            return False  # fast path — nothing paused.
+
+        # Drain pending ACKs before parking so online-store durability
+        # signal (`pyforge:processed:{msg_id}`) is honored for in-flight
+        # messages and the offline writer's flush completes for what's
+        # already been applied.
+        if self._pending_ack:
+            await self._flush_and_ack()
+
+        logger.info(
+            "wal_consumer.upgrade_pause_started",
+            schemas=[
+                name.decode("utf-8")
+                for name, val in zip(self._segments.keys(), pause_vals, strict=False)
+                if val is not None
+            ],
+        )
+
+        pause_t0 = time.monotonic()
+        # Per-pause-loop liveness refresh state. Inherits the run-loop's
+        # last-refresh as the starting point so the 10s gating tracks
+        # wall-time correctly across the boundary.
+        last_liveness_refresh_in_pause = self._liveness_last_refresh
+
+        while True:
+            await asyncio.sleep(1.0)
+            if self._stop_event.is_set():
+                evolution_consumer_pause_seconds.observe(time.monotonic() - pause_t0)
+                return True  # outer loop's stop check will exit run().
+
+            # Inline liveness refresh: 1M-entity upgrades can hold the pause
+            # for 8-15s; pause longer than 30s would let the liveness key
+            # TTL out and spuriously alert operators. Same 10s gating as
+            # the run-loop refresh.
+            now = time.monotonic()
+            if now - last_liveness_refresh_in_pause >= LIVENESS_REFRESH_INTERVAL_SECONDS:
+                try:
+                    await self._redis.set(
+                        KEY_WAL_CONSUMER_LIVENESS,
+                        self._pid_str,
+                        ex=LIVENESS_TTL_SECONDS,
+                    )
+                    last_liveness_refresh_in_pause = now
+                    self._liveness_last_refresh = now
+                    self._c_liveness_ok.inc()
+                except Exception:
+                    self._c_liveness_err.inc()
+
+            pause_vals = await self._redis.mget(*pause_keys)
+            if not any(v is not None for v in pause_vals):
+                break  # pause cleared
+
+        evolution_consumer_pause_seconds.observe(time.monotonic() - pause_t0)
+        logger.info(
+            "wal_consumer.upgrade_pause_cleared",
+            duration_seconds=time.monotonic() - pause_t0,
+        )
+
+        # Pause cleared. Reopen segments — schema:current may now point to
+        # a NEW segment for any schema that was paused. The schema CLASS in
+        # `_schemas` was loaded at process start; if the operator failed to
+        # redeploy schema code before the upgrade, open_current's CRC check
+        # will fail.
+        for name in list(self._segments.keys()):
+            schema_class = self._schemas[name]
+            try:
+                new_seg = self._registry.open_current(schema_class)
+            except SchemaCRCMismatchError:
+                logger.error(
+                    "wal_consumer.schema_crc_mismatch_after_upgrade",
+                    schema=name.decode("utf-8", "replace"),
+                    msg=(
+                        "Consumer's cached schema class is stale; new segment's "
+                        "CRC does not match. Restart consumer with new schema "
+                        "code (operator workflow step 7)."
+                    ),
+                )
+                self._c_crc_mismatch.inc()
+                self._stop_event.set()
+                return True
+            except SegmentNotFoundError:
+                # schema:current was DEL'd (rare — operator interference, or
+                # orchestrator-died-without-attach in the wait-for-attach
+                # window). Park; operator must re-run upgrade or hydrate.
+                logger.error(
+                    "wal_consumer.segment_not_found_after_upgrade",
+                    schema=name.decode("utf-8", "replace"),
+                    msg="schema:current absent post-pause. Operator action required.",
+                )
+                self._stop_event.set()
+                return True
+
+            old_seg = self._segments[name]
+            if new_seg.name != old_seg.name:
+                # Segment changed — close the old handle (DECR refcount, may
+                # trigger watchdog cleanup if last holder) and swap in new.
+                self._registry.close(old_seg)
+                self._segments[name] = new_seg
+                self._row_buffers[name] = bytearray(row_size(schema_class))
+            else:
+                # Pause was set but flip never happened (orchestrator failed
+                # mid-upgrade and cleared the pause via finally block).
+                # Keep using the same segment; close the redundant open we
+                # just acquired.
+                self._registry.close(new_seg)
+
+        return True
 
     async def stop(self) -> None:
         """Signal the run loop to exit at the next batch boundary.
@@ -656,7 +847,29 @@ class WALConsumer:
         try:
             values_list = msgpack.unpackb(fields[_F_BLOB], use_list=True, raw=False)
             row_buffer = self._row_buffers[schema_name]
-            pack_row_from_list(schema, values_list, row_buffer)
+            try:
+                pack_row_from_list(schema, values_list, row_buffer)
+            except ValueError as e:
+                # Step 15 poison-pill: pack_row_from_list raised on length
+                # mismatch (verified raise behavior in row_pack.py:172-173).
+                # A stale producer (running OLD schema) wrote during the
+                # upgrade window; consumer (running NEW schema) decodes
+                # against NEW field count, length mismatches.
+                # Do NOT XACK — message stays in PEL so XPENDING reflects
+                # the issue and operators see the binary alert signal.
+                logger.error(
+                    "wal_consumer.poison_pill_format_mismatch",
+                    msg_id=msg_id.decode("ascii", "replace"),
+                    schema=schema_name.decode("utf-8", "replace"),
+                    error=str(e),
+                    msg=(
+                        "Stale producer wrote message with old schema "
+                        "during upgrade. Message stays in PEL; restart "
+                        "producer with new schema code, then drain PEL."
+                    ),
+                )
+                self._c_poison_pill.inc()
+                return False
             # bytearray → memoryview is zero-copy; layout.insert wants
             # bytes | memoryview per its signature.
             new_insert = layout.insert(
