@@ -162,31 +162,61 @@ trap (numbers theoretically reproducible but not by readers running
 commodity hardware).
 
 **Memory ceiling on `ubuntu-latest`:** 7 GB RAM, /dev/shm ≈ 3.5 GB
-(50% of RAM via tmpfs default). This is enough for all Tier-1 +
-Tier-2 (LARGE) benches but **not** for record-tier benches:
+(50% of RAM via tmpfs default). This is enough for **Tier-1 only**
+in a single pytest session. Heavy benches (LARGE + RECORD) cannot
+reliably run in the same session because of cumulative state across
+benches + `insert_many`'s transient column-major buffers (~3-4×
+row data size during the bulk-insert kernel).
 
-| Bench | Segment size | /dev/shm fit on `ubuntu-latest`? |
+Per-bench peak memory during a single bench session:
+
+| Bench | Per-bench peak | Cumulative-with-prior-benches /dev/shm fit on `ubuntu-latest`? |
 |---|---|---|
-| `test_bench_upgrade_1m_50_field` | ~3.2 GB | NO — SIGBUS during populate |
-| `test_hydrate_10m_200_field_record` | ~6 GB | NO |
-| `test_read_pit_10k_pairs_10m_rows_200_field_record` | ~6 GB | NO |
+| Tier-1 benches (warm-cache, GC pressure, write_sync RTT, etc.) | < 100 MB each | YES — fits comfortably with margin |
+| `test_bench_upgrade_100k_50_field` | ~600 MB | YES (run alone) |
+| `test_hydrate_100k_50_field` | ~1.0 GB peak (segment + insert_many flat buffers + PyArrow table) | NO — observed SIGBUS when run after Tier-1 + 100k upgrade benches |
+| `test_bench_upgrade_1m_50_field` | ~3.2 GB | NO — SIGBUS during 1M-row populate |
+| `test_hydrate_1m_200_field` | ~6 GB | NO |
+| `test_hydrate_10m_200_field_record` | ~6 GB+ | NO |
+| `test_read_pit_10k_pairs_10m_rows_200_field_record` | ~6 GB+ | NO |
 
-Discovered the hard way on Step 16a's first push-to-main run: the 1M
-evolution bench's `_populate_old` setup loop hit SIGBUS (exit 135) at
-some row N partway through populating because tmpfs lazy-allocation
-filled up under the segment's mmap. POSIX shm uses `ftruncate` to
-reserve size up front but blocks commit on write; if /dev/shm runs
-out during writes, you get SIGBUS, not a graceful EALLOC at create
-time.
+Discovered on Step 16a's first two push-to-main CI runs:
+1. First run: SIGBUS in `_populate_old` during 1M evolution bench's
+   1M-row insert loop. POSIX shm uses lazy `ftruncate` — size accepted
+   up front, blocks commit on write. /dev/shm exhausts mid-populate →
+   SIGBUS, not graceful EALLOC.
+2. Second run (after pulling RECORD-tier off push): SIGBUS in
+   `insert_many` Numba kernel during 100k hydration. Segment
+   accumulation from earlier benches + the kernel's transient buffers
+   pushed cumulative usage over the limit.
 
-**Workflow consequence:** `PYFORGE_RUN_RECORD_BENCH=1` runs ONLY on
-`workflow_dispatch` + `schedule` (manual + weekly), NOT on
-push-to-main. `PYFORGE_RUN_LARGE_BENCH=1` runs on push too — the
-LARGE benches (100k upgrades, 100k/1M hydration) fit comfortably.
-Record-tier benches are explicit capacity-planning artifacts; if
-needed on every push, use a self-hosted larger runner or split out
-to its own workflow with `runs-on: ubuntu-latest-large` (16-core,
-64 GB RAM).
+**Workflow consequence:** `PYFORGE_RUN_LARGE_BENCH` AND
+`PYFORGE_RUN_RECORD_BENCH` both restricted to `workflow_dispatch` +
+`schedule` (manual + weekly), NOT push. Push-to-main runs Tier-1
+only — same scope as pre-Step-16 CI but now with actual gate
+enforcement via `check.py --strict`. The `benchmarks/conftest.py`
+session does NOT have an autouse `_shm_test_isolation` fixture
+(unlike `tests/conftest.py`), so heavy benches accumulate state
+within a session. Heavy-bench coverage on every push would require
+either:
+
+- An autouse cleanup fixture in `benchmarks/conftest.py` (per-bench
+  unlink + Redis flush). Belt-and-suspenders; doesn't fix the
+  per-bench-peak issue at 1M+ scales.
+- `--forked` pytest plugin so each bench runs in its own process
+  (fresh /dev/shm per bench). Adds ~3s subprocess startup per bench;
+  ~4 min added to push-tier runtime. Acceptable trade-off if
+  automated heavy-bench coverage is needed.
+- `runs-on: ubuntu-latest-large` (16-core, 64 GB RAM, ~$0.20/run).
+  Skips the memory-ceiling problem entirely.
+- `benchmarks/runs/repeat.py` orchestrator pattern — already does
+  per-subprocess fresh state via `tempfile.TemporaryDirectory` +
+  fresh pytest invocations. The right tool for headline-quality
+  heavy-bench numbers, but not the right tool for PR-blocking gate
+  enforcement (slow + manual review).
+
+For now, push runs Tier-1 only. Heavy benches verified manually on
+operator workstation + on `workflow_dispatch` runs.
 
 ### 8. P4 distinction: assemble-under-GC vs GC pause durations
 
