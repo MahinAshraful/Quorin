@@ -53,22 +53,16 @@ def make_segment(
     *,
     max_id_bytes: int = DEFAULT_MAX_ID_BYTES,
     name_prefix: str = "pyforge_test",
-    hugepage: bool = False,
 ) -> Segment:
     """Allocate and initialize a Segment without touching SegmentRegistry / Redis.
 
     Mirrors the per-file ``_make_segment`` pattern in
     ``tests/unit/test_layout.py`` etc. Centralized here so Step 4's three new
     test files don't all duplicate it.
-
-    The ``hugepage`` kwarg threads through to ``posix_shm.create`` for the
-    Step 16b MADV_HUGEPAGE A/B bench (see
-    ``benchmarks/runs/step16_madvise_ab.py``). Default ``False`` preserves
-    Steps 1-15 behavior for all existing test callers.
     """
     layout = compute_layout(schema, capacity=capacity, max_id_bytes=max_id_bytes)
     name = unique_segment_name(name_prefix)
-    handle = posix_shm.create(name, layout.total_size, hugepage=hugepage)
+    handle = posix_shm.create(name, layout.total_size)
 
     crc = crc32_of_bytes(compile_schema(schema).tobytes())
     header = struct.pack(HEADER_FMT, MAGIC, int(schema.version), crc, capacity)

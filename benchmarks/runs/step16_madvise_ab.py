@@ -8,10 +8,28 @@ successful samples (i.e. >= 5 failures out of 20). ``REJECT_NOISE_DOMINATED``
 when the geo-mean ships but the p10 floor doesn't — the case where a few
 high-speedup runs lifted the mean above the line.
 
+**Step 16b decision: REJECT** (workflow run #37, commit `08711e6`,
+2026-05-04). On the canonical CI venue (GitHub Actions ubuntu-latest),
+``shmem_enabled=[never]`` means the kernel ignored the MADV advice
+entirely — the A/B measured ``geo_mean=1.029x  p10=0.969x``, neither
+side actually got hugepages. The ``hugepage`` kwarg threading was
+reverted in the same commit; production code at end of Step 16b is
+identical to Step 16a. See ADR-015 §7b for the full rejection rationale
+and revisit conditions.
+
+To re-run this orchestrator on a venue with tmpfs THP enabled: restore
+the ``hugepage`` kwarg threading on ``pyforge/_internal/posix_shm.py``
++ ``pyforge/shm.py`` + ``tests/_helpers.py::make_segment`` +
+``benchmarks/test_assembly_benchmark.py::seg_200_field``'s env-var read
+(per the Rev-10-era git history before the REJECT finalization commit),
+then ``python benchmarks/runs/step16_madvise_ab.py --num-runs 20`` on a
+host where ``cat /sys/kernel/mm/transparent_hugepage/shmem_enabled``
+shows ``[always]`` / ``[advise]`` / ``[within_size]``.
+
 Standalone (not pytest-driven). Requires Linux + native L3 sysfs. GitHub
-Actions ``ubuntu-latest`` qualifies; WSL2 may run but the result isn't
-authoritative — kernel THP is platform-specific and ubuntu-latest's older
-Xeon class L3 differs from bare-metal.
+Actions ``ubuntu-latest`` qualifies but doesn't grant tmpfs hugepages
+by default; WSL2 also has THP off. Kernel THP is platform-specific and
+ubuntu-latest's older Xeon class L3 differs from bare-metal.
 
 Tmpfs THP prerequisites (per ADR-015 §"MADV_HUGEPAGE A/B" / Step 16b plan §2.3):
   * Kernel build: ``CONFIG_TRANSPARENT_HUGEPAGE_SHMEM=y``.

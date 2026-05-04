@@ -30,7 +30,6 @@ Step 16 changes:
 from __future__ import annotations
 
 import contextlib
-import os
 import sys
 import tracemalloc
 
@@ -118,14 +117,7 @@ def seg_4_field():
 
 @pytest.fixture
 def seg_200_field():
-    # Step 16b A/B toggle: PYFORGE_AB_HUGEPAGE=1 routes through
-    # tests/_helpers.py::make_segment → posix_shm.create with hugepage=True.
-    # Default unset / "0" preserves Steps 1-15 behavior. The orchestrator
-    # at benchmarks/runs/step16_madvise_ab.py sets this env var per
-    # subprocess; pytest parametrize would multiply scenarios per-invocation
-    # which is wrong shape for a paired A/B comparison.
-    hugepage = os.environ.get("PYFORGE_AB_HUGEPAGE", "0") == "1"
-    seg = make_segment(_Schema200Field, capacity=16, hugepage=hugepage)
+    seg = make_segment(_Schema200Field, capacity=16)
     values: dict[str, np.ndarray] = {
         f.name: np.zeros(f.element_count, dtype=np.float32) for f in _Schema200Field.fields
     }

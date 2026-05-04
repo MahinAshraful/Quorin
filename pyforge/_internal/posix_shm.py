@@ -51,20 +51,12 @@ class SegmentHandle:
     _mmap: mmap.mmap = field(repr=False)
 
 
-def create(name: str, size: int, *, hugepage: bool = False) -> SegmentHandle:
+def create(name: str, size: int) -> SegmentHandle:
     """Allocate a brand-new POSIX shm segment of ``size`` bytes.
 
     Uses ``O_CREX`` so an existing name with the same id raises rather than
     silently sharing memory. If the post-create ``mmap`` fails, the segment
     is unlinked before re-raising — no leak in ``/dev/shm``.
-
-    When ``hugepage=True``, ``MADV_HUGEPAGE`` is requested on the mapping.
-    Tmpfs THP requires kernel ``CONFIG_TRANSPARENT_HUGEPAGE_SHMEM=y`` plus
-    ``/sys/kernel/mm/transparent_hugepage/shmem_enabled`` ∈ ``{always,
-    advise, within_size}``; even then the kernel may decline under
-    fragmentation. A failure to honor the advice is non-fatal — the
-    ``(AttributeError, OSError)`` swallow keeps the segment alive at the
-    base 4 KB page granularity.
 
     Raises:
         posix_ipc.ExistentialError: if a segment with this name already exists.
@@ -85,26 +77,18 @@ def create(name: str, size: int, *, hugepage: bool = False) -> SegmentHandle:
         with contextlib.suppress(posix_ipc.ExistentialError):
             posix_ipc.unlink_shared_memory(name)
         raise
-    if hugepage:
-        with contextlib.suppress(AttributeError, OSError):
-            m.madvise(mmap.MADV_HUGEPAGE)
     # mmap succeeded; the fd is no longer needed (mapping survives).
     shm.close_fd()
     return SegmentHandle(name=name, size=size, buf=memoryview(m), _mmap=m)
 
 
-def open_existing(name: str, *, hugepage: bool = False) -> SegmentHandle:
+def open_existing(name: str) -> SegmentHandle:
     """Open an existing POSIX shm segment for read+write.
 
     Critical property: this does **not** register the segment with
     ``multiprocessing.resource_tracker``, so when this process exits, the
     segment is **not** unlinked. That contract is what makes Pyforge readable
     by multiple processes safely.
-
-    The ``hugepage`` kwarg works as in :func:`create`. Kernel THP is per-VMA,
-    not per-fd: a worker process opening the same segment without this kwarg
-    gets base 4 KB pages on its own faults regardless of whether the creator
-    requested hugepages.
 
     Raises:
         FileNotFoundError: if the segment does not exist.
@@ -119,9 +103,6 @@ def open_existing(name: str, *, hugepage: bool = False) -> SegmentHandle:
         with contextlib.suppress(OSError):
             shm.close_fd()
         raise
-    if hugepage:
-        with contextlib.suppress(AttributeError, OSError):
-            m.madvise(mmap.MADV_HUGEPAGE)
     size = shm.size
     shm.close_fd()
     return SegmentHandle(name=name, size=size, buf=memoryview(m), _mmap=m)

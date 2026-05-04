@@ -261,42 +261,38 @@ either:
 For now, push runs Tier-1 only. Heavy benches verified manually on
 operator workstation + on `workflow_dispatch` runs.
 
-### 7b. MADV_HUGEPAGE A/B negative result — DRAFT (Step 16b)
+### 7b. MADV_HUGEPAGE A/B negative result (Step 16b — REJECT)
 
-> **Status: DRAFT (Step 16b — pre-canonical-A/B).** This section is staged for the **REJECT outcome** (covers both `REJECT` and `REJECT_NOISE_DOMINATED`). If the canonical A/B run on a venue with tmpfs THP enabled lands `geo_mean_speedup < 1.5×`, OR `geo_mean ≥ 1.5×` but `p10_speedup < 1.0×`, the operator slots in canonical numbers from `benchmarks/results/madv_ab.json` (TBD markers below), keeps this section, and DELETES the staged ADR-016. If the A/B ships, the operator DELETES this section instead. See `progress/step16b_plan.md` §10 for the commit cadence.
+The Step 16b A/B harness (`benchmarks/runs/step16_madvise_ab.py`) measured `MADV_HUGEPAGE` on cold-cache 200-field assemble against the no-MADV baseline. Decision rule (per Step 16b plan §2.3): SHIP iff `geo_mean(speedup) ≥ 1.5×` AND `p10(speedup) ≥ 1.0×`. The canonical A/B did **NOT** meet the gates.
 
-The Step 16b A/B harness measured `MADV_HUGEPAGE` on cold-cache 200-field assemble against the no-MADV baseline. Decision rule (per Step 16b plan §2.3): SHIP iff `geo_mean(speedup) ≥ 1.5×` AND `p10(speedup) ≥ 1.0×`. The A/B did **NOT** meet the gates.
-
-**Venue:** TBD (e.g., GitHub Actions `ubuntu-latest` ubuntu-24.04, run ID TBD, commit TBD).
+**Venue:** GitHub Actions `ubuntu-latest` (`ubuntu-24.04`), commit `08711e6` (Rev-10 of the Step 16b plan), workflow run #37 (ID `25338866105`).
 **N:** 20 fresh subprocesses per side. **Bench:** `test_bench_assemble_200_field_cold_cache_numba`.
 
 **Sysfs state at A/B time:**
-- `/sys/kernel/mm/transparent_hugepage/enabled`: TBD.
-- `/sys/kernel/mm/transparent_hugepage/shmem_enabled`: TBD.
+- `/sys/kernel/mm/transparent_hugepage/enabled`: `[always] madvise never` (top-level THP allows madvise — fine).
+- `/sys/kernel/mm/transparent_hugepage/shmem_enabled`: `always within_size advise [never] deny force` — **tmpfs THP is DISABLED on ubuntu-latest by default**.
 
 **Result:**
 
 | Metric | Value | Threshold | Pass? |
 |---|---|---|---|
-| `geo_mean(speedup)` | TBD× | ≥ 1.5× | TBD |
-| `p10(speedup)` | TBD× | ≥ 1.0× | TBD |
-| Outcome flavor | TBD (`REJECT` or `REJECT_NOISE_DOMINATED`) | — | — |
+| `geo_mean(speedup)` | 1.029× | ≥ 1.5× | NO |
+| `p10(speedup)` | 0.969× | ≥ 1.0× | NO |
+| Outcome flavor | `REJECT` (both gates failed) | — | — |
+| `n_actual_runs` | 20 / 20 (false / true) | both ≥ 16 | YES (clean run) |
 
-**Interpretation (operator fills based on which flavor):**
-
-- **If REJECT (geo_mean < 1.5×):** TBD — describe what the geo-mean number was and whether the sysfs context shows hugepages were granted. If `shmem_enabled = [never]` etc., the result is venue-rejection (the kernel never honored the advice), NOT "MADV doesn't help." If sysfs shows hugepages are available and geo-mean is still under 1.5×, the conclusion is the bench's working set already fits in L3 well enough that page-fault cost isn't dominant.
-- **If REJECT_NOISE_DOMINATED (geo_mean ≥ 1.5× but p10 < 1.0×):** TBD — the mean shipped but the tail underperformed. This is the "noise-dominated edge of the prior" case the p10 floor was designed to catch (Step 16b plan Rev-6 issue #4). Mean was lifted by a few high-speedup runs; >10% of paired-rank ratios were ≤ 1.0× (some `hugepage=True` runs were SLOWER than `hugepage=False`). Insufficient signal to ship.
+**Interpretation: this is a venue-limitation REJECT, NOT a "MADV doesn't help" REJECT.** `shmem_enabled=[never]` means the kernel never honored the `MADV_HUGEPAGE` advice on either side of the A/B — the orchestrator's `hugepage=True` subprocesses got the same base 4 KB pages as the `hugepage=False` ones. The slight `< 1.0×` p10 (0.969×) reflects that the wasted `m.madvise()` syscall added per-create overhead without delivering any page-fault reduction. The A/B as designed cannot demonstrate SHIP on this venue because the venue kernel ignores the question entirely.
 
 **Decision:** the `hugepage` kwarg threading is reverted in the same Step 16b commit. Production code at end of commit is identical to Step 16a — Steps 1-15 behavior preserved.
 
 **Revisit conditions (when to re-run the A/B):**
 
+- **A venue with tmpfs THP enabled.** `cat /sys/kernel/mm/transparent_hugepage/shmem_enabled` must show `[always]` / `[advise]` / `[within_size]`. Operators on hosts where this is configured (workstations, self-hosted CI runners, custom kernels) can re-run the orchestrator and revisit the decision.
 - **Different kernel** (newer THP defragmentation behavior, larger 1 GB pages support, etc.).
 - **Larger L3 host** (more recent Intel/AMD platform; ubuntu-latest's older Xeon class is ~30 MB shared L3).
-- **Different page-fault profile** (a workload with substantially larger segments / more pages per assemble call where the page-fault count starts dominating again).
 - **Bare-metal venue** where THP fragmentation pressure is lower than virtualized runners.
 
-The A/B harness (`benchmarks/runs/step16_madvise_ab.py`) and the `hugepage` kwarg threading + `_helpers.py::make_segment` toggle are kept in repo history; re-running is `git revert <REJECT-commit>` + `python benchmarks/runs/step16_madvise_ab.py`.
+The A/B harness (`benchmarks/runs/step16_madvise_ab.py`) is kept in repo. To re-run on a better venue: restore the `hugepage` kwarg threading from the Rev-10-era git history (`pyforge/_internal/posix_shm.py`, `pyforge/shm.py`, `tests/_helpers.py::make_segment`, `benchmarks/test_assembly_benchmark.py::seg_200_field` env-var read) and invoke `python benchmarks/runs/step16_madvise_ab.py --num-runs 20`. Canonical JSON committed at `benchmarks/results/madv_ab.json` for the Rev-10 baseline.
 
 ### 8. P4 distinction: assemble-under-GC vs GC pause durations
 
