@@ -304,12 +304,30 @@ def test_hydrate_10k_50_field_smoke(
     os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
     reason="Set PYFORGE_RUN_LARGE_BENCH=1 to run the 100k bench (~30-90s generation)",
 )
+@pytest.mark.skipif(
+    os.environ.get("PYFORGE_RUN_LARGE_SHM_BENCH") != "1",
+    reason=(
+        "needs cumulative /dev/shm headroom (~1 GB peak + prior bench accumulation). "
+        "ubuntu-latest cannot host on schedule (ADR-015 §7). Set "
+        "PYFORGE_RUN_LARGE_SHM_BENCH=1 on operator hosts or workflow_dispatch "
+        "with `-f run_large_shm_bench=true`."
+    ),
+)
 def test_hydrate_100k_50_field(
     benchmark: Any,
     _hydrate_dataset_100k_50: tuple[Path, type[FeatureSchema]],
     redis_client: Any,
 ) -> None:
-    """100k entities x 50 fields. Gate: 8s p99 native target."""
+    """100k entities x 50 fields. OPERATOR-VERIFIED 8s p99 native target.
+
+    Step 16b Rev-11 (mirroring the 1M evolution bench's pattern in
+    test_evolution_benchmark.py): isolation peak is ~1 GB, but cumulative
+    /dev/shm pressure from prior heavy benches in the same pytest session
+    (Tier-1 + 100k upgrade) pushes it over ubuntu-latest's ~3.5 GB ceiling.
+    The 8 s gate is now operator-verified, NOT CI-verified — the entry
+    is INTENTIONALLY ABSENT from tier2.yml so check.py --strict doesn't
+    FAIL on schedule (gated bench absent from JSON = MISS = strict FAIL).
+    See ADR-015 §7 for the venue gap analysis."""
     base, schema = _hydrate_dataset_100k_50
     store = ParquetDatasetStore(base)
     registry = SegmentRegistry(redis_client)
@@ -334,12 +352,25 @@ def test_hydrate_100k_50_field(
     os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
     reason="Set PYFORGE_RUN_LARGE_BENCH=1 to run the 1M bench (~10 min generation)",
 )
+@pytest.mark.skipif(
+    os.environ.get("PYFORGE_RUN_LARGE_SHM_BENCH") != "1",
+    reason=(
+        "needs ~6 GB /dev/shm; ubuntu-latest cannot host (ADR-015 §7). "
+        "Set PYFORGE_RUN_LARGE_SHM_BENCH=1 on operator hosts or "
+        "workflow_dispatch with `-f run_large_shm_bench=true`."
+    ),
+)
 def test_hydrate_1m_200_field(
     benchmark: Any,
     _hydrate_dataset_1m_200: tuple[Path, type[FeatureSchema]],
     redis_client: Any,
 ) -> None:
-    """1M entities x 200 fields + 128-emb. Gate: 45s p99 native target."""
+    """1M entities x 200 fields + 128-emb. OPERATOR-VERIFIED 45s p99 native target.
+
+    Step 16b Rev-11: same operator-verified pattern as test_hydrate_100k.
+    Isolation peak is ~6 GB which exceeds ubuntu-latest's ~3.5 GB
+    /dev/shm ceiling outright. The 45 s gate is operator-verified, NOT
+    CI-verified."""
     base, schema = _hydrate_dataset_1m_200
     store = ParquetDatasetStore(base)
     registry = SegmentRegistry(redis_client)
