@@ -28,7 +28,6 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -73,33 +72,14 @@ def redis_client() -> Iterator[redis.Redis]:
 
 # ---------------------------------------------------------------------------
 # Step 16: cold-cache clobber array (P3 + C3)
+#
+# Step 16b Rev-4 H1 cascade: ``detect_l3_size_bytes`` lives in
+# ``benchmarks/_cache_clobber.py`` so the standalone MADV A/B orchestrator
+# (``benchmarks/runs/step16_madvise_ab.py``) can use the same primitive
+# without going through pytest fixture machinery.
 # ---------------------------------------------------------------------------
 
-
-def _detect_l3_size_bytes() -> int:
-    """Read L3 cache size from sysfs. Returns 16 MiB fallback if L3 unavailable.
-
-    Critical (C3): do NOT fall back to ``/sys/.../index2/size``. On WSL2 / VMs
-    that hide cache hierarchy, ``index2`` reports L2 (a few MB). A 4x-L2
-    clobber is nowhere near L3 size and the bench measures L2-cold instead
-    of L3-cold, silently. Better to use a deliberately conservative 16 MiB
-    fallback that the bench logs WARN about than to confidently report
-    bad data.
-    """
-    p = Path("/sys/devices/system/cpu/cpu0/cache/index3/size")
-    try:
-        raw = p.read_text().strip()
-        # format: "32K", "8M", "105M"
-        unit = raw[-1].upper()
-        num = int(raw[:-1])
-        return num * (1024 if unit == "K" else 1024 * 1024 if unit == "M" else 1)
-    except (FileNotFoundError, ValueError, OSError):
-        LOGGER.warning(
-            "cold-cache: /sys/.../index3/size unavailable; using 16 MiB fallback "
-            "(4x clobber = 64 MiB). On hosts with L3 > 16 MiB this measures "
-            "L2/L3-partial-cold, not L3-cold. Run on bare metal for honest L3-cold."
-        )
-        return 16 * 1024 * 1024
+from benchmarks._cache_clobber import detect_l3_size_bytes  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -117,7 +97,7 @@ def cold_cache_clobber() -> tuple[np.ndarray, int]:
     """
     if sys.platform != "linux":
         pytest.skip("cold-cache fixture requires Linux sysfs")
-    size_bytes = min(4 * _detect_l3_size_bytes(), 1 * 1024 * 1024 * 1024)
+    size_bytes = min(4 * detect_l3_size_bytes(), 1 * 1024 * 1024 * 1024)
     n_doubles = size_bytes // 8
     clobber = np.empty(n_doubles, dtype=np.float64)
     LOGGER.info("cold-cache: clobber size = %.1f MiB", size_bytes / (1024 * 1024))

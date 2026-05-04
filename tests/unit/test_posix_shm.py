@@ -63,6 +63,28 @@ class TestCreate:
             posix_shm.close(h1)
             posix_shm.unlink(name)
 
+    @pytest.mark.skipif(sys.platform != "linux", reason="MADV_HUGEPAGE is Linux-only")
+    def test_hugepage_kwarg_no_error(self) -> None:
+        """Step 16b: ``hugepage=True`` must not raise even if THP is disabled.
+
+        The ``(AttributeError, OSError)`` swallow keeps the segment alive at
+        base 4 KB pages when the kernel rejects the advice. This exercises
+        the catch path AND the happy path on a single small segment — both
+        produce a usable SegmentHandle.
+        """
+        name = _unique_name()
+        h = posix_shm.create(name, 4096, hugepage=True)
+        try:
+            assert h.size == 4096
+            assert len(h.buf) == 4096
+            # Round-trip a known byte to confirm the mapping is usable
+            # regardless of whether the kernel granted hugepages.
+            h.buf[0] = 0x42
+            assert h.buf[0] == 0x42
+        finally:
+            posix_shm.close(h)
+            posix_shm.unlink(name)
+
 
 class TestOpenExisting:
     def test_open_nonexistent_raises_file_not_found(self) -> None:

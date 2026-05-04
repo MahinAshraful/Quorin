@@ -166,11 +166,39 @@ Three deliverables:
   transition window. Both `pyforge_X_v1_*` and `pyforge_X_v2_*` may exist
   in `/dev/shm` for ~150 s + drain time as old holders close.
 
+## Step 16b amendment: 1M evolution bench is operator-verified, NOT CI-verified
+
+The original Step 15 plan §5.5 trip-wire was framed as: "if
+`bench_upgrade_1m_50_field` p99 > 10 s on **native Linux CI**, ship the
+Numba translation kernel before Step 16 closes." Post-16a CI surfaced that
+GitHub Actions `ubuntu-latest` (~3.5 GB `/dev/shm` tmpfs default) cannot
+host the bench at all — the populate phase needs a ~3.2 GB segment and
+SIGBUSes during the 1M-row insert loop. See ADR-015 §7 for the venue-gap
+analysis + per-bench peak table; not duplicated here to avoid drift.
+
+**Methodology shift:** the 10 s gate is operator-verified. The measurement
+of record is the Step 15 progress entry's WSL2 single-sample (9.91 s, 90 ms
+margin under the gate). Future operator runs on workstations with adequate
+`/dev/shm` append to the record. The bench gates on
+`PYFORGE_RUN_RECORD_BENCH=1` AND `PYFORGE_RUN_LARGE_SHM_BENCH=1` so it skips
+cleanly on CI `schedule` events; the workflow sets the LARGE_SHM var only
+on `workflow_dispatch`. The 10 s contract lives in the bench docstring
+(`benchmarks/test_evolution_benchmark.py::test_bench_upgrade_1m_50_field`)
+and **is intentionally absent from `benchmarks/regression/tier2.yml`** —
+a `--strict` framework gate is incompatible with operator-only running
+because a gated bench absent from the JSON is a MISS → strict FAIL.
+
+**The Numba translation kernel option remains parked** (parking-lot at
+`progress/progress.md` ~line 2195): would ship if operator-verified
+measurements degrade sharply on real workloads, OR if Step 17 picks up
+automated heavy-bench coverage (one of ADR-015 §7's four candidate paths)
+and the trip-wire fires there.
+
 ## Out of scope
 
-- **Numba translation kernel**: v1 uses vectorized numpy. Step 16
-  follow-up if `bench_upgrade_1m_50_field` exceeds 10 s on native Linux
-  CI.
+- **Numba translation kernel**: v1 uses vectorized numpy. Parked per the
+  amendment above; ships if operator-verified runs degrade or Step 17
+  surfaces an automated trip-wire.
 - **Online schema-class reload**: dynamic Python class reloading is
   punted to Step 17+ (would need a Redis-backed schema registry + careful
   `importlib.reload` semantics).

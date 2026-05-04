@@ -103,13 +103,16 @@ jobs:
       # skip-on-missing-env. Step 16a tried to run heavy benches on
       # push — that exposed the structural ubuntu-latest memory limit.
       #
-      # Push runs Tier-1 only (~30s, fits comfortably). Dispatch +
-      # schedule run the full heavy suite with operator awareness of
-      # the venue's memory limits. If a future need wants automated
-      # heavy-bench coverage, options are: ubuntu-latest-large
-      # (16-core, 64 GB, ~$0.20/run), self-hosted runner, or the
-      # benchmarks/runs/repeat.py orchestrator pattern (each bench
-      # in a fresh subprocess — sidesteps accumulation).
+      # Push runs Tier-1 only (~30s, fits comfortably). Dispatch runs
+      # the full suite; schedule runs everything except heavy-shm
+      # benches gated by PYFORGE_RUN_LARGE_SHM_BENCH (Step 16b: those
+      # exceed ubuntu-latest's /dev/shm ceiling — bench_upgrade_1m
+      # is the canonical example, ~3.2 GB segment vs ~3.5 GB tmpfs).
+      # If a future need wants automated heavy-shm coverage, options
+      # are: ubuntu-latest-large (16-core, 64 GB, ~$0.20/run),
+      # self-hosted runner, or the benchmarks/runs/repeat.py
+      # orchestrator pattern (each bench in a fresh subprocess —
+      # sidesteps accumulation).
       # ==========================================================
       - name: Run benchmarks (Tier-2 LARGE + RECORD)
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
@@ -117,6 +120,13 @@ jobs:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
           PYFORGE_RUN_LARGE_BENCH: "1"
           PYFORGE_RUN_RECORD_BENCH: "1"
+          # Step 16b: heavy-shm benches (segment >= 3 GB; e.g.
+          # bench_upgrade_1m_50_field) gate on this var. Set ONLY on
+          # workflow_dispatch — schedule must skip them because
+          # ubuntu-latest /dev/shm (~3.5 GB) cannot host them. Operator-
+          # initiated dispatch runs imply operator-chosen venue.
+          # See ADR-015 §7 + ADR-014 amendment.
+          PYFORGE_RUN_LARGE_SHM_BENCH: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: |
           uv run pytest benchmarks/ \
             --benchmark-only \
@@ -124,8 +134,11 @@ jobs:
             --benchmark-save-data \
             --benchmark-storage=benchmarks/results
 
+      # GH Actions: ``if:`` REPLACES the implicit success() check. Without
+      # the explicit success(), this step would run against partial JSON
+      # if the prior Run step SIGBUSed, masking the original failure.
       - name: Check Tier-1 + Tier-2 thresholds
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         run: uv run python benchmarks/regression/check.py --include-tier2 --strict
 
       # ==========================================================
@@ -149,6 +162,31 @@ jobs:
               --output "benchmarks/results/n20/${name}_n20.json" \
               || echo "WARN: orchestrator scenario $name failed; continuing"
           done
+
+      # ==========================================================
+      # Step 16b MADV_HUGEPAGE A/B (workflow_dispatch only — never on push,
+      # never on schedule). Produces benchmarks/results/madv_ab.json that
+      # drives the SHIP/REJECT/REJECT_NOISE_DOMINATED/INCOMPLETE_AB decision
+      # per Step 16b plan §10. Standalone orchestrator (NOT pytest-driven);
+      # spawns 40 fresh subprocesses (N=20 per side); ~5-10 min wall-clock.
+      #
+      # Sysfs state (transparent_hugepage/enabled + shmem_enabled) gets
+      # captured into the JSON so a measured ~1.0x can be distinguished
+      # from "kernel didn't grant hugepages" (Step 16b plan Rev-6 issue #3).
+      #
+      # Exit codes: 0 SHIP, 2 REJECT (either flavor), 3 INCOMPLETE_AB.
+      # `continue-on-error: true` lets a non-zero (REJECT/INCOMPLETE_AB)
+      # exit not fail the whole job — the JSON artifact is the decision
+      # carrier, not the step status. Operator reads madv_ab.json and
+      # picks SHIP-vs-REJECT-vs-re-trigger per plan §10.
+      # ==========================================================
+      - name: Run Step 16b MADV_HUGEPAGE A/B (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          uv run python benchmarks/runs/step16_madvise_ab.py \
+            --num-runs 20 \
+            --output benchmarks/results/madv_ab.json
 
       # ==========================================================
       # Optional flamegraph capture (manual workflow_dispatch only).

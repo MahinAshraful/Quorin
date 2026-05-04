@@ -182,6 +182,7 @@ class SegmentRegistry:
         capacity: int,
         max_id_bytes: int = DEFAULT_MAX_ID_BYTES,
         set_current: bool = True,
+        hugepage: bool = False,
     ) -> Segment:
         """Allocate a new multi-entity segment for ``schema`` with the given
         ``capacity`` and per-ID byte budget.
@@ -205,7 +206,7 @@ class SegmentRegistry:
         heartbeat.ensure_started(self._redis, os.getpid())
         layout = compute_layout(schema, capacity=capacity, max_id_bytes=max_id_bytes)
         name = _segment_name(schema)
-        handle = posix_shm.create(name, layout.total_size)
+        handle = posix_shm.create(name, layout.total_size, hugepage=hugepage)
         try:
             offset_table = compile_schema(schema)
             crc = crc32_of_bytes(offset_table.tobytes())
@@ -247,13 +248,18 @@ class SegmentRegistry:
 
     # ----- open -------------------------------------------------------------
 
-    def open_current(self, schema: type[FeatureSchema]) -> Segment:
+    def open_current(self, schema: type[FeatureSchema], *, hugepage: bool = False) -> Segment:
         """Open the schema's currently-active segment.
 
         Verifies header magic, schema version, and CRC32 against the local
         schema; reads ``capacity`` and ``max_id_bytes`` out of the segment to
         derive a fresh :class:`SegmentLayout`. INCRs refcount and adds the
         segment to this PID's held set.
+
+        The ``hugepage`` kwarg threads through to ``posix_shm.open_existing``
+        so worker processes opt into MADV_HUGEPAGE on their own VMA. Kernel
+        THP is per-VMA, not per-fd: without this kwarg, only the segment
+        creator gets hugepages.
 
         Raises:
             SegmentNotFoundError: when no current segment is registered.
@@ -267,7 +273,7 @@ class SegmentRegistry:
                 f"no current segment registered for schema {schema.__name__}"
             )
         name: str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-        handle = posix_shm.open_existing(name)
+        handle = posix_shm.open_existing(name, hugepage=hugepage)
         try:
             self._verify_header(handle, schema)
             layout = compute_layout_from_segment(handle.buf, schema)
