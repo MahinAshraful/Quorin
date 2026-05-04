@@ -161,6 +161,33 @@ anyone else) and the "Threadripper Pro under specific kernel tunings"
 trap (numbers theoretically reproducible but not by readers running
 commodity hardware).
 
+**Memory ceiling on `ubuntu-latest`:** 7 GB RAM, /dev/shm ≈ 3.5 GB
+(50% of RAM via tmpfs default). This is enough for all Tier-1 +
+Tier-2 (LARGE) benches but **not** for record-tier benches:
+
+| Bench | Segment size | /dev/shm fit on `ubuntu-latest`? |
+|---|---|---|
+| `test_bench_upgrade_1m_50_field` | ~3.2 GB | NO — SIGBUS during populate |
+| `test_hydrate_10m_200_field_record` | ~6 GB | NO |
+| `test_read_pit_10k_pairs_10m_rows_200_field_record` | ~6 GB | NO |
+
+Discovered the hard way on Step 16a's first push-to-main run: the 1M
+evolution bench's `_populate_old` setup loop hit SIGBUS (exit 135) at
+some row N partway through populating because tmpfs lazy-allocation
+filled up under the segment's mmap. POSIX shm uses `ftruncate` to
+reserve size up front but blocks commit on write; if /dev/shm runs
+out during writes, you get SIGBUS, not a graceful EALLOC at create
+time.
+
+**Workflow consequence:** `PYFORGE_RUN_RECORD_BENCH=1` runs ONLY on
+`workflow_dispatch` + `schedule` (manual + weekly), NOT on
+push-to-main. `PYFORGE_RUN_LARGE_BENCH=1` runs on push too — the
+LARGE benches (100k upgrades, 100k/1M hydration) fit comfortably.
+Record-tier benches are explicit capacity-planning artifacts; if
+needed on every push, use a self-hosted larger runner or split out
+to its own workflow with `runs-on: ubuntu-latest-large` (16-core,
+64 GB RAM).
+
 ### 8. P4 distinction: assemble-under-GC vs GC pause durations
 
 `benchmarks/test_assemble_under_gc.py::test_bench_assemble_p999_under_gc_pressure_4_field`

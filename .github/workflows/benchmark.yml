@@ -89,11 +89,34 @@ jobs:
         run: uv run python benchmarks/regression/check.py --strict
 
       # ==========================================================
-      # Tier-2: env-gated heavy benches. Push-to-main + workflow_dispatch
-      # + scheduled weekly only. NOT PR-blocking.
+      # Tier-2 (LARGE): env-gated 100k/1M variants. Push-to-main +
+      # workflow_dispatch + scheduled weekly. Does NOT include
+      # record-tier (10M / 1M evolution) benches — those crash on
+      # GitHub Actions ubuntu-latest because /dev/shm (~3.5 GB) is
+      # exhausted by the 1M evolution bench's ~3.2 GB segment +
+      # surrounding Python state. PYFORGE_RUN_RECORD_BENCH is
+      # workflow_dispatch + schedule only (see next step).
       # ==========================================================
-      - name: Run benchmarks (Tier-2)
+      - name: Run benchmarks (Tier-2 LARGE)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        env:
+          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+          PYFORGE_RUN_LARGE_BENCH: "1"
+        run: |
+          uv run pytest benchmarks/ \
+            --benchmark-only \
+            --benchmark-autosave \
+            --benchmark-save-data \
+            --benchmark-storage=benchmarks/results
+
+      # ==========================================================
+      # Tier-2 (RECORD): 1M evolution bench + 10M hydration/PIT.
+      # workflow_dispatch + schedule ONLY. These benches need
+      # multi-GB /dev/shm and routinely SIGBUS on push-tier runners.
+      # Capacity-planning records, not regression detection.
+      # ==========================================================
+      - name: Run benchmarks (Tier-2 RECORD)
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         env:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
           PYFORGE_RUN_LARGE_BENCH: "1"
