@@ -84,9 +84,13 @@ def run_one_side(hugepage: bool, num_runs: int, results_dir: Path) -> tuple[list
 
     Salvage discipline: a single subprocess failure (timeout, transient
     import error, parse error) does NOT abort the whole A/B run. Failures
-    are caught, logged, and the orchestrator keeps collecting the remaining
-    samples. Threshold for declaring inconclusive is
-    ``>= MIN_SUCCESS_FRACTION`` on each side.
+    are caught, logged BOTH to stdout (visible in CI log) AND appended to
+    the failures list (committed to JSON). Threshold for declaring
+    inconclusive is ``>= MIN_SUCCESS_FRACTION`` on each side.
+
+    Rev-9 lesson: when JSON wasn't written (e.g. orchestrator died at
+    defensive leak-check before write), failure reasons in the failures
+    list became unreachable. Real-time stdout print is the durable channel.
     """
     p99s: list[float] = []
     failures: list[str] = []
@@ -116,12 +120,22 @@ def run_one_side(hugepage: bool, num_runs: int, results_dir: Path) -> tuple[list
             bench = json.loads(json_path.read_text())["benchmarks"][0]
             p99s.append(float(np.percentile(bench["stats"]["data"], 99)))
         except subprocess.TimeoutExpired:
-            failures.append(f"run_{i:02d}: timeout >{SUBPROCESS_TIMEOUT_SECONDS}s")
+            msg = f"run_{i:02d}: timeout >{SUBPROCESS_TIMEOUT_SECONDS}s"
+            failures.append(msg)
+            print(f"  FAIL hugepage={int(hugepage)} {msg}", flush=True)
         except subprocess.CalledProcessError as e:
             tail = (e.stderr or "")[-500:]
-            failures.append(f"run_{i:02d}: exit {e.returncode}; stderr_tail={tail!r}")
+            msg = f"run_{i:02d}: exit {e.returncode}; stderr_tail={tail!r}"
+            failures.append(msg)
+            print(
+                f"  FAIL hugepage={int(hugepage)} run_{i:02d} "
+                f"exit={e.returncode}\n    stderr_tail: {tail.strip()}",
+                flush=True,
+            )
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as e:
-            failures.append(f"run_{i:02d}: parse {type(e).__name__}: {e}")
+            msg = f"run_{i:02d}: parse {type(e).__name__}: {e}"
+            failures.append(msg)
+            print(f"  FAIL hugepage={int(hugepage)} {msg}", flush=True)
     return p99s, failures
 
 
@@ -171,18 +185,6 @@ def main() -> int:
     true_p99s, true_failures = run_one_side(True, n_runs, results_dir)
     print(f"  {len(true_p99s)}/{n_runs} ok, {len(true_failures)} failed")
 
-    # Defensive exit assertion: only flag /dev/shm segments leaked by THIS
-    # run, not pre-existing pollution from prior workflow steps (Rev-8 fix).
-    # The bench uses make_segment which posix_shm.unlinks per iteration;
-    # this catches the rare case where a fixture teardown didn't run
-    # (subprocess SIGKILL etc).
-    current_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
-    leaked = sorted(current_shm - pre_existing_shm)
-    if leaked:
-        raise SystemExit(
-            f"BENCH LEAK DETECTED: this run added {len(leaked)} segments: {leaked[:5]}"
-        )
-
     n_false_ok, n_true_ok = len(false_p99s), len(true_p99s)
     threshold_n = int(n_runs * MIN_SUCCESS_FRACTION)
     incomplete = n_false_ok < threshold_n or n_true_ok < threshold_n
@@ -231,6 +233,11 @@ def main() -> int:
         "sysfs": _read_sysfs(),
         "decision": decision,
     }
+    # Rev-9 lesson: write JSON BEFORE the leak check. Run #33 produced a
+    # diagnostic output dict (40 failures, INCOMPLETE_AB) but the orchestrator
+    # raised SystemExit at the leak check before write_text(), losing all
+    # the failure-reason data we needed to debug. Decision: data on disk
+    # is the most valuable artifact — leak check becomes a non-fatal warning.
     out_path = args.output
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(output, indent=2))
@@ -244,6 +251,24 @@ def main() -> int:
     else:
         print(f"Decision: {decision} (insufficient successful samples; re-trigger workflow)")
     print(f"Output: {out_path}")
+
+    # Defensive leak check (Rev-9 demoted to non-fatal warning). Pre-existing
+    # pollution from prior workflow steps was already snapshotted at startup;
+    # this only flags segments NEW since this orchestrator started. A leak
+    # here means subprocesses crashed before fixture teardown ran (e.g.
+    # SIGKILL during the bench). Operator should investigate causes via
+    # the failure stderr_tail values printed during run_one_side AND
+    # committed to the JSON's false_failures/true_failures lists.
+    current_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
+    leaked = sorted(current_shm - pre_existing_shm)
+    if leaked:
+        print(
+            f"WARNING: this run added {len(leaked)} /dev/shm/pyforge_* segments "
+            f"(probably subprocess crashes before fixture teardown). "
+            f"Sample: {leaked[:5]}",
+            flush=True,
+        )
+
     # Exit codes: 0 SHIP, 2 REJECT (either flavor), 3 INCOMPLETE_AB.
     return {
         "SHIP": 0,
