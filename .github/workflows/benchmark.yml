@@ -118,8 +118,23 @@ jobs:
       # orchestrator pattern (each bench in a fresh subprocess —
       # sidesteps accumulation).
       # ==========================================================
+      # Step 16b Rev-12: LARGE+RECORD is now strictly opt-in.
+      # Rev-7 through Rev-11 chased a moving target: gate one SIGBUS-prone
+      # bench, find another. Rev-11 fixed 100k/1M hydration; run #41 then
+      # hung for 2h+ on (probably) test_read_pit_10k_pairs_5m_rows_100_field.
+      # ubuntu-latest just isn't the right venue for any of the heavy
+      # benches — /dev/shm 3.5 GB ceiling + cumulative pressure makes
+      # most of them either SIGBUS or hang. ADR-015 §7 documented this
+      # as the venue gap.
+      #
+      # Resolution: LARGE+RECORD opts in via the workflow_dispatch input
+      # `run_large_shm_bench`. Default `gh workflow run benchmark.yml`
+      # (no flags) skips the step entirely. Schedule cron also skips it
+      # (cron has no inputs). Automated heavy-bench coverage on a
+      # capable venue is a Step 17 follow-up (autouse cleanup, --forked,
+      # ubuntu-latest-large, or repeat.py orchestrator pattern).
       - name: Run benchmarks (Tier-2 LARGE + RECORD)
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        if: github.event.inputs.run_large_shm_bench == 'true'
         env:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
           PYFORGE_RUN_LARGE_BENCH: "1"
@@ -142,11 +157,11 @@ jobs:
             --benchmark-save-data \
             --benchmark-storage=benchmarks/results
 
-      # GH Actions: ``if:`` REPLACES the implicit success() check. Without
-      # the explicit success(), this step would run against partial JSON
-      # if the prior Run step SIGBUSed, masking the original failure.
+      # Step 16b Rev-12: only check Tier-1+Tier-2 gates if LARGE+RECORD
+      # actually ran (input opt-in), otherwise tier2 gates referencing
+      # absent JSON entries cause spurious MISS-→-strict-FAIL.
       - name: Check Tier-1 + Tier-2 thresholds
-        if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
+        if: success() && github.event.inputs.run_large_shm_bench == 'true'
         run: uv run python benchmarks/regression/check.py --include-tier2 --strict
 
       # ==========================================================
