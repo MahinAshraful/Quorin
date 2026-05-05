@@ -36,13 +36,14 @@ import numpy as np
 from numba import prange
 
 from pyforge._internal.hash_id import hash_entity_id
+from pyforge._internal.lookup_kernel import lookup_jit
+from pyforge._internal.lookup_kernel import prewarm as _lookup_prewarm
 from pyforge.layout import (
     SLOT_BYTES,
     SLOT_FEATURE_ROW_INDEX_OFFSET,
     SLOT_FLAGS_OFFSET,
     SLOT_ID_OFFSET_OFFSET,
     SLOT_NAME_HASH_OFFSET,
-    lookup,
 )
 from pyforge.serving import EntityNotFoundError
 
@@ -140,11 +141,11 @@ def assemble(
 
     Raises:
         ValueError: if ``entity_id`` is empty (delegated to
-            :func:`pyforge.layout.lookup`), or if ``out`` does not match the
-            required shape / dtype / contiguity / writeability.
+            :func:`pyforge._internal.lookup_kernel.lookup_jit`), or if ``out``
+            does not match the required shape / dtype / contiguity / writeability.
         EntityNotFoundError: if no row exists for ``entity_id``.
     """
-    row_offset = lookup(segment, entity_id)
+    row_offset = lookup_jit(segment, entity_id)
     if row_offset is None:
         raise EntityNotFoundError(entity_id)
 
@@ -196,10 +197,17 @@ def prewarm() -> None:
     function; the @njit decorator produces one IR object covering all
     five dtype branches.
 
-    Compiles both :func:`_assemble_core` (single-entity, Step 5) and
-    :func:`_assemble_batch_core` (batch, Step 8). Single entry point so
-    callers don't have to know about the kernel split.
+    Compiles :func:`_assemble_core` (single-entity, Step 5),
+    :func:`_assemble_batch_core` (batch, Step 8), and
+    :func:`pyforge._internal.lookup_kernel._lookup_core` (single-entity
+    lookup, Step 16c). Single entry point so callers don't have to know
+    about the kernel split.
     """
+    # Lookup kernel first (Step 16c). pyforge.assembly.assemble calls into
+    # it via lookup_jit, so warming the lookup kernel before the assemble
+    # kernel keeps the dispatch order honest if a caller benches `assemble`
+    # right after prewarm() returns.
+    _lookup_prewarm()
     seg_u8 = np.zeros(64, dtype=np.uint8)
     _assemble_core(
         seg_u8,

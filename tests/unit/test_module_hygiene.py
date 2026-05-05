@@ -10,11 +10,12 @@ These parametrized tests run a clean import of each module that MUST
 stay Numba-free and assert no ``numba.*`` module ended up in
 ``sys.modules``. Cheap (~10ms per module), locks the invariant globally.
 
-``pyforge.hydration``, ``pyforge.assembly``, and
-``pyforge._internal.insert_kernel`` are the LEGITIMATE Numba-pulling
-modules — they are deliberately excluded from this list. If a future
-step adds another legitimate Numba module, append it here and document
-the rationale.
+``pyforge.hydration``, ``pyforge.assembly``, ``pyforge._internal.insert_kernel``,
+``pyforge._internal.lookup_kernel`` (Step 16c), and
+``pyforge._internal.hash_kernel`` (Step 16c-d, Numba BLAKE2b) are the
+LEGITIMATE Numba-pulling modules — they are deliberately excluded from
+this list. If a future step adds another legitimate Numba module,
+append it here and document the rationale.
 """
 
 from __future__ import annotations
@@ -66,8 +67,10 @@ def test_module_does_not_pull_numba(module_name: str) -> None:
             f"{module_name} transitively imports numba: {pulled}. "
             f"This forces ~200ms LLVM init on every importer of "
             f"{module_name}. Check for accidental imports of "
-            f"`pyforge.hydration`, `pyforge.assembly`, or "
-            f"`pyforge._internal.insert_kernel`."
+            f"`pyforge.hydration`, `pyforge.assembly`, "
+            f"`pyforge._internal.insert_kernel`, "
+            f"`pyforge._internal.lookup_kernel`, or "
+            f"`pyforge._internal.hash_kernel`."
         )
     finally:
         # Restore the original module cache so we don't leave fresh

@@ -1,0 +1,101 @@
+"""Flamegraph driver: hydrate(...) against a 100k-row Parquet dataset.
+
+CI-runnable variant. ~1 GB peak memory; fits ubuntu-latest's 3.5 GB
+/dev/shm ceiling per ADR-015 §7. Operator-only ``hydration_1m.py``
+exercises the same path at 1M rows but requires a workstation venue
+with > 4 GB /dev/shm.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from benchmarks.flamegraphs._setup import (
+    Schema200Field,
+    populate_dataset_for_hydration,
+)
+
+N_ENTITIES = 100_000
+
+
+def _redis_url() -> str:
+    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+
+
+def main() -> None:
+    # Heavy imports deferred so module-load is cheap (py-spy attaches early).
+    import redis
+
+    from pyforge.hydration import hydrate
+    from pyforge.offline import ParquetDatasetStore
+    from pyforge.shm import SegmentRegistry
+
+    redis_client = redis.Redis.from_url(_redis_url(), decode_responses=False)
+    redis_client.ping()  # fail fast if Redis is unreachable
+    registry = SegmentRegistry(redis_client)
+
+    # Drop any prior schema:current pointer so hydrate's precondition #1 passes.
+    safe = Schema200Field.__name__.replace(".", "_")
+    redis_client.delete(f"pyforge:schema:{safe}:current".encode())
+
+    print(f"Populating Parquet dataset with {N_ENTITIES:,} entities ...", flush=True)
+    t0 = time.monotonic()
+    dataset_path = populate_dataset_for_hydration(
+        n_entities=N_ENTITIES,
+        schema=Schema200Field,
+    )
+    print(f"  populate done in {time.monotonic() - t0:.1f}s", flush=True)
+
+    try:
+        store = ParquetDatasetStore(
+            dataset_path=dataset_path,
+            schema=Schema200Field,
+            flush_interval_seconds=3600,
+        )
+        try:
+            print("Running hydrate() ...", flush=True)
+            t1 = time.monotonic()
+            result = asyncio.run(
+                asyncio.to_thread(
+                    hydrate,
+                    Schema200Field,
+                    store,
+                    registry,
+                    redis_client=redis_client,
+                )
+            )
+            print(
+                f"  hydrate() done in {time.monotonic() - t1:.1f}s "
+                f"(entity_count={result.entity_count})",
+                flush=True,
+            )
+        finally:
+            asyncio.run(store.close())
+    finally:
+        # Best-effort segment cleanup; leaves /dev/shm clean for the next run.
+        try:
+            current_key = f"pyforge:schema:{safe}:current".encode()
+            seg_name_b = redis_client.get(current_key)
+            if seg_name_b:
+                import contextlib
+
+                from pyforge._internal import posix_shm
+
+                seg_name = seg_name_b.decode()
+                redis_client.delete(current_key)
+                with contextlib.suppress(FileNotFoundError):
+                    posix_shm.unlink(seg_name)
+        finally:
+            shutil.rmtree(dataset_path, ignore_errors=True)
+            redis_client.close()
+
+
+if __name__ == "__main__":
+    main()

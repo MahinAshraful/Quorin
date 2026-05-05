@@ -232,16 +232,39 @@ jobs:
       # Optional flamegraph capture (manual workflow_dispatch only).
       # py-spy needs ptrace privileges; ubuntu-latest runners have
       # unprivileged ptrace enabled by default.
+      #
+      # Step 16c: 6 CI-runnable driver scripts in benchmarks/flamegraphs/
+      # exercise the headline scenarios. The hydration_1m driver is
+      # operator-only (PYFORGE_RUN_LARGE_SHM_BENCH gate; ubuntu-latest
+      # SIGBUSes — see ADR-015 §7) and excluded from the loop below.
       # ==========================================================
       - name: Record flamegraphs (manual)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.record_flamegraphs == 'true'
         env:
           PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+        continue-on-error: true
         run: |
           mkdir -p benchmarks/results/flamegraphs
-          # Driver scripts live in benchmarks/flamegraphs/ — Step 16c lands them.
-          # This step is a placeholder; ship as a no-op until 16c.
-          echo "flamegraph capture: 16c will populate benchmarks/flamegraphs/*.py"
+          # py-spy is not in dev deps; only needed for flamegraph capture.
+          uv pip install py-spy
+
+          for driver in benchmarks/flamegraphs/*.py; do
+            name=$(basename "${driver%.py}")
+            # Skip the helper module + the operator-only hydration_1m driver.
+            [ "$name" = "_setup" ] && continue
+            [ "$name" = "hydration_1m" ] && continue
+            echo "::group::flamegraph: $name"
+            uv run py-spy record \
+              --native \
+              --subprocesses \
+              --rate 500 \
+              --duration 30 \
+              --output "benchmarks/results/flamegraphs/${name}.svg" \
+              -- \
+              uv run python "$driver" \
+              || echo "WARN: flamegraph capture for $name failed; continuing"
+            echo "::endgroup::"
+          done
 
       # ==========================================================
       # Always upload artifacts so the operator can pull bench JSON +
