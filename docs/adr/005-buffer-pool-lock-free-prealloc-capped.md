@@ -265,11 +265,58 @@ premature optionality the project rules forbid.
 ~1.8× faster than the slice-assign alternative on a 1300-element buffer,
 matching CPython's "single C call vs slice protocol" intuition.
 
+## Step 16c amendment — native-CI pool overhead is wider than the original WSL2 measurement
+
+**Date:** 2026-05-05
+**Workflow:** GitHub Actions ubuntu-latest run 25394553451, commit 4818ea4.
+
+The `progress/step16c_review.md` Check A (pool overhead vs Numba assemble
+on the hot path) ran against the canonical Tier-1 single-process JSON
+post-Step-16c-d:
+
+| Schema | numba p99 | pooled p99 | delta | Original ADR-005 claim |
+|---|---|---|---|---|
+| 4-field | 6.61 us | 8.70 us | **+2.09 us** | +0.66 us (~"latency-neutral") |
+| 200-field | 12.14 us | 16.03 us | **+3.90 us** | +0.73 us |
+
+Both **breach the +0.5 us latency-neutral gate** by 4-8x. The pool is no
+longer accurately described as "latency-neutral on the hot path" on
+native CI. The honest disclosure:
+
+1. **The pool costs measurable latency on native CI** — +2-4 us per
+   single-entity assemble at WSL2-tolerable schema sizes. WSL2's
+   original +660-730 ns delta was an underestimate of the production
+   cost on native CI's older Xeons (per ADR-015 §7's cache-architecture
+   asymmetry).
+2. **The wins still survive** — the four reasons in §"Why ship the pool
+   anyway" above (one ndarray allocation eliminated, memory ceiling,
+   foundation for batch, `pool_miss_total` observability) still apply.
+3. **Pool stays default for the batch path** (Step 8's `BatchBufferPool`)
+   where the pool's overhead is amortized over 1000 entities — `np.empty`'s
+   cost scales linearly with bytes; the pool's ~550 ns is constant.
+4. **Pool is opt-in for the single-entity path** — callers who measure
+   their own workload and find the +2-4 us unacceptable use
+   `pyforge.assembly.assemble(seg, eid)` without a pool. Callers wanting
+   the GC-pressure / memory-ceiling wins use the pooled API.
+
+The Step 17 follow-up "C-extension `_Checkout`" (parking-lot item)
+targets ~50 ns instead of ~550 ns Python overhead. If a workload needs
+sub-microsecond pool checkout on native CI, that's the path.
+
+The README's quoted pool numbers cite the native-CI measurement above,
+NOT the WSL2 numbers in the table at §"Measured numbers (post-Step-6
+benchmark, WSL2 Ubuntu)". The WSL2 table is preserved for historical
+context.
+
 ## References
 
 - Pyforge build plan, Step 6 section ("Buffer pool").
 - ADR-002 on per-open refcounting (analogous "no per-call shared-state
   mutation" reasoning for hot paths).
 - ADR-004 on Numba adoption (the path this pool serves).
+- ADR-015 §7 (native CI vs WSL2 cache-architecture asymmetry — context
+  for the Step 16c amendment above).
+- ADR-017 (lookup-jit + Numba BLAKE2b — the trip-wire ratification that
+  surfaced this overhead measurement).
 - CPython source `Modules/_collectionsmodule.c` (deque atomicity).
 - PEP 703 (free-threaded CPython, 3.13t — pool's GIL assumption boundary).

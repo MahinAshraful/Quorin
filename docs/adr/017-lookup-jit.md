@@ -147,7 +147,34 @@ The hash-collision regression test mirrors Step 3's
 to share the same hash, asserts both findable via the kernel's
 byte-compare path.
 
-## Validation — measured numbers (WSL2; native-CI numbers in Commit B)
+## Validation — canonical native-CI numbers (Commit B, run 25394553451)
+
+**Trip-wire ratification: GREEN.** GitHub Actions ubuntu-latest N=20
+fresh-subprocess orchestrator on `headline_4_field_warm`:
+
+| Metric | Native CI N=20 | Spec | Verdict |
+|---|---|---|---|
+| `median_p50` | **4.14 us** | <= 5 us p99 | GREEN at median |
+| `median_p99` | **4.48 us** | <= 5 us | **GREEN at p99 — SPEC MET** |
+| `median_p999` | 10.19 us | (informational) | — |
+| `stddev_p99` | 1.18 us (26%) | (informational) | — |
+| `max_of_max` | 56.01 us | (informational) | one OS-scheduler outlier |
+
+The Numba BLAKE2b kernel was the load-bearing change. Pre-Numba-BLAKE2b
+projection was ~6.5-7 us p99 (RED). Post-Numba-BLAKE2b actual = 4.48 us
+p99 (GREEN with 12% headroom).
+
+**README quotes:** "5 us p99 substantiated on GitHub Actions
+ubuntu-latest at 4-field warm-cache assemble (N=20 fresh subprocesses,
+2026-05-05). 200-field warm-cache p99 = 11.66 us. Cold-cache 200-field
+p99 = 66 us — over the 20-50 us spec band on the older Xeon CPUs, but
+within band on modern desktop hardware per ADR-015 §11 bare-metal
+extrapolation."
+
+## Validation — WSL2 reference numbers (informational)
+
+WSL2 single-process pytest-benchmark, autouse prewarm fixture (cumulative
+post-Step-5 / post-Step-16c / post-Step-16c-d):
 
 WSL2 single-process pytest-benchmark, autouse prewarm fixture (cumulative
 post-Step-5 / post-Step-16c / post-Step-16c-d):

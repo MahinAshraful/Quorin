@@ -377,3 +377,53 @@ just not the headline-paper number.
   responsibility regresses, the parity test catches it row-by-row but
   the failure surfaces in `assemble_batch` rather than in a
   `lookup_batch` we can't isolate. ~150 LOC kernel; manageable.
+
+## Step 16c amendment — native-CI batch ratio is materially under the original 5x claim
+
+**Date:** 2026-05-05
+**Workflow:** GitHub Actions ubuntu-latest run 25394553451, commit 4818ea4.
+
+The `progress/step16c_review.md` Check B (batch ratio: `assemble_batch_*`
+vs `n_single_assemble_*` at p50, gate <= 0.22 = >= 4.5x speedup) ran
+against the canonical Tier-1 single-process JSON post-Step-16c-d:
+
+| Schema | batch p50 | n_single p50 | ratio | speedup | Original ADR-007 claim |
+|---|---|---|---|---|---|
+| 4-field | 2.79 ms | 4.09 ms | 0.683 | **1.46x** | 3.32x WSL2 / 5x gate |
+| 200-field | 4.75 ms | 8.21 ms | 0.578 | **1.73x** | 3.16x WSL2 / 5x gate |
+
+Both **breach the 5x ratio gate** by 2-3x. ADR-015 §7's cache-architecture
+finding predicted this: native CI's older Xeons (~30 MB L3) make the
+batch path's working set spill to L3 or DRAM where modern desktops fit
+in L2. Cache-bound + bandwidth-bound benches measure 3-6x SLOWER on
+native CI than WSL2, while the per-row Python prep cost is constant —
+so the ratio collapses.
+
+The honest disclosure:
+
+1. **Native-CI batch speedup is 1.5-1.7x, NOT 5x.** README quotes the
+   measured native-CI numbers with venue disclosure per ADR-015 §11.
+2. **Bare-metal extrapolation:** modern desktop CPUs (more L3, higher
+   single-thread clocks) should lift the ratio toward the WSL2 3.2x
+   measurement. The 5x build-plan target is only realistic on hardware
+   with substantial L3 + good batch-loop SIMD — not GitHub Actions
+   ubuntu-latest. Operators on bare metal should re-measure.
+3. **Batch is still meaningfully faster than N×single** at the 1.5-1.7x
+   level. The wins still survive: amortizing per-row Python overhead
+   (str.encode + hash + dispatch) over 1000 entities, kernel-level
+   SIMD on the assembly ladder.
+4. **The 5x gate in `tier1.yml` was never actually a gate** —
+   `progress/step16c_review.md` describes the ratio check as a manual
+   diff, not a check.py-enforced threshold (pytest-benchmark records
+   wall-clock per round, not derived ratios). The retightened tier1.yml
+   gates `assemble_batch_*_n1000` at 3x measured native-CI p99 (17 ms
+   for 4-field, 16 ms for 200-field) — those are absolute regression
+   detectors, not ratio claims.
+
+A future Step 17 README authors quotes "1.5-1.7x speedup at N=1000 on
+ubuntu-latest; faster on bare metal" — honest disclosure beats heroic
+claim per build-plan §50.
+
+The `progress/step16c_review.md` checklist remains the binding
+follow-up: any future regression that drops the ratio below 1.5x on
+native CI breaches THIS amendment and triggers another investigation.

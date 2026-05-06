@@ -261,6 +261,57 @@ either:
 For now, push runs Tier-1 only. Heavy benches verified manually on
 operator workstation + on `workflow_dispatch` runs.
 
+### 7c. Step 16c canonical native-CI baselines + ADR-005/007 amendments
+
+**Date:** 2026-05-05
+**Workflow:** GitHub Actions ubuntu-latest run 25394553451, commit 4818ea4.
+
+Step 16c-d's USER-driven scope expansion (Numba BLAKE2b on top of
+lookup-jit) closed the 5 us p99 trip-wire on `headline_4_field_warm_numba`:
+**N=20 native-CI median_p99 = 4.48 us — GREEN, spec MET at p99**.
+
+Canonical N=20 JSONs committed at `benchmarks/results/n20/`:
+
+| Scenario | median_p50 | median_p99 | stddev_p99 | Spec | Verdict |
+|---|---|---|---|---|---|
+| `headline_4_field_warm` | 4.14 us | **4.48 us** | 1.18 us | <= 5 us p99 | GREEN |
+| `headline_200_field_warm` | 7.59 us | 11.66 us | 1.10 us | 10-20 us p99 | GREEN (mid-band) |
+| `headline_200_field_cold` | 31.28 us | 66.14 us | 7.84 us | 20-50 us p99 | over band — disclosed |
+| `gc_p999_pressure` | 4.07 us | 17.88 us | 4.09 us | (informational) | — |
+| `write_sync_rtt` | 1930 us | 2181 us | 556 us | <= 75 ms gate | GREEN (35x headroom) |
+
+**Cold-cache 66 us median_p99 is over the 20-50 us spec band by 30%.**
+Per §4 honest-disclosure-2 (single-process cold-cache has 3-4x variance,
+N=20 stddev_ratio is 11.9% — middle of distribution). The README quotes
+the canonical 66 us with venue disclosure; bare-metal extrapolation puts
+it at ~22-44 us (1.5-3x faster than ubuntu-latest), bringing it back
+inside the spec band on modern hardware.
+
+Tier-1 gates retightened from this run per §11 calibration discipline.
+See `benchmarks/regression/tier1.yml` for the per-bench rationale +
+calibration source comments. New gate values are 3.0x median_p99 (no
+N=20 scenario qualified for 2.5x — all stddev_ratios were 9-26%).
+"Tightening only" discipline preserved 4 single-process gates that were
+already tighter than 3x measured.
+
+**ADR-005 amendment** (pool overhead): the native-CI Check A measured
++2.09 us at 4-field and +3.90 us at 200-field — both BREACH the +0.5 us
+"latency-neutral" claim. ADR-005 amended with honest measured numbers;
+pool stays default for batch path, opt-in for single-entity path on
+cost-sensitive workloads. Step 17's C-extension `_Checkout` is the
+parking-lot path to ~50 ns checkout cost.
+
+**ADR-007 amendment** (batch ratio): the native-CI Check B measured
+1.46x speedup at 4-field and 1.73x at 200-field — both BREACH the 5x
+ratio claim. The build-plan 5x target only realistic on hardware with
+substantial L3 + good batch-loop SIMD; ubuntu-latest's older Xeons
+collapse the ratio to 1.5-1.7x per the §7 cache-architecture finding.
+ADR-007 amended; README quotes 1.5-1.7x with venue disclosure +
+"faster on bare metal."
+
+**Trip-wire closed; Step 16 status flips to ✅.** Step 17 (Documentation
++ release) is the next ⬜.
+
 ### 7b. MADV_HUGEPAGE A/B negative result (Step 16b — REJECT)
 
 The Step 16b A/B harness (`benchmarks/runs/step16_madvise_ab.py`) measured `MADV_HUGEPAGE` on cold-cache 200-field assemble against the no-MADV baseline. Decision rule (per Step 16b plan §2.3): SHIP iff `geo_mean(speedup) ≥ 1.5×` AND `p10(speedup) ≥ 1.0×`. The canonical A/B did **NOT** meet the gates.
