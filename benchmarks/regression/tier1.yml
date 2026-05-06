@@ -140,13 +140,18 @@ test_bench_assemble_batch_200_field_n1000:
 # WSL2 here because Docker Desktop loopback was the bottleneck on WSL2).
 # -----------------------------------------------------------------------
 test_bench_write_50_field:
-  # NATIVE CI calibrated. Run 25394553451 p99 = 199us (WSL2 was 10.83ms;
-  # 50x faster on native CI Redis loopback). 3x = 596us. Was 25ms.
-  p99_seconds: 0.000600         # 600us = 3x native CI 199us p99
+  # NATIVE CI calibrated. Run 25394553451 (Commit A) p99 = 199us; run #46
+  # (Commit B) p99 = 378us — 1.9x run-to-run variance. RTT-dominated bench
+  # (Redis XADD via Docker loopback); 3x headroom rule is insufficient.
+  # Using ~15x worst-observed to absorb the RTT variance class.
+  p99_seconds: 0.003            # 3ms (was 600us; bumped for RTT variance per Step 17)
 test_bench_write_200_field:
-  # NATIVE CI calibrated. Run 25394553451 p99 = 266us. 3x = 798us.
-  # Was 25ms.
-  p99_seconds: 0.000800         # 800us = 3x native CI 266us p99
+  # NATIVE CI calibrated. Run 25394553451 (Commit A) p99 = 266us; run #46
+  # (Commit B) p99 = 1827us — 6.9x run-to-run variance. RTT-dominated +
+  # larger payload (200 fields + 128-dim embedding) amplifies the variance
+  # class vs write_50_field. Sister bench to write_50; both need wider
+  # headroom than the 3x rule applied to CPU-bound benches.
+  p99_seconds: 0.005            # 5ms (was 800us; bumped for RTT variance per Step 17)
 test_bench_pydantic_validate_50_field:
   # NATIVE CI calibrated. Run 25394553451 p99 = 10.86us. 3x = 33us.
   # Was 100us.
