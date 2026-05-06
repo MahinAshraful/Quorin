@@ -1,18 +1,18 @@
 """Test-side simulators for the Step 14 watchdog.
 
-Step 14's watchdog ships at :mod:`pyforge.watchdog`. These helpers exist
+Step 14's watchdog ships at :mod:`quorin.watchdog`. These helpers exist
 because (a) Step 13 hydration tests pre-date the watchdog and need to
 simulate post-crash cleanup deterministically, and (b) some tests want
 to drive cleanup outside a subprocess for speed. The helpers now SHARE
-the watchdog's Lua scripts (via :mod:`pyforge._internal.watchdog_lua`)
+the watchdog's Lua scripts (via :mod:`quorin._internal.watchdog_lua`)
 so simulation can't drift from production.
 
 Two distinct helpers because the contracts are different:
 
 * :func:`simulate_orphan_cleanup_in_orchestrator` — IN-PROCESS path.
-  Wraps :func:`pyforge.hydration._force_drop_orphan`.
+  Wraps :func:`quorin.hydration._force_drop_orphan`.
 * :func:`simulate_watchdog_post_crash_cleanup` — POST-CRASH path.
-  Calls the real Step 14 cleanup Lua against ``pyforge:pid_segments:{dead_pid}``,
+  Calls the real Step 14 cleanup Lua against ``quorin:pid_segments:{dead_pid}``,
   including the PID-reuse guard (requires ``expected_create_time_ns``
   argument; defaults to 0 for tests that don't care about the guard
   and want a fall-through).
@@ -23,12 +23,12 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-from pyforge._internal import posix_shm
-from pyforge._internal.watchdog_lua import (
+from quorin._internal import posix_shm
+from quorin._internal.watchdog_lua import (
     CLEANUP_DEAD_PID_LUA,
     DRAIN_CLEANUP_QUEUE_LUA,
 )
-from pyforge.shm import (
+from quorin.shm import (
     KEY_CLEANUP_QUEUE,
     KEY_SEGMENT_TO_SCHEMA,
     _key_pid_segments,
@@ -37,11 +37,11 @@ from pyforge.shm import (
 if TYPE_CHECKING:
     import redis
 
-    from pyforge.schema import FeatureSchema
-    from pyforge.shm import Segment
+    from quorin.schema import FeatureSchema
+    from quorin.shm import Segment
 
 
-_KEY_HEARTBEATS = "pyforge:heartbeats"
+_KEY_HEARTBEATS = "quorin:heartbeats"
 
 
 def simulate_orphan_cleanup_in_orchestrator(
@@ -51,12 +51,12 @@ def simulate_orphan_cleanup_in_orchestrator(
 ) -> None:
     """The IN-PROCESS orphan path.
 
-    Wraps :func:`pyforge.hydration._force_drop_orphan` for tests that
+    Wraps :func:`quorin.hydration._force_drop_orphan` for tests that
     need the same semantics outside the orchestrator's exception
     handler. NOT used by chaos tests — those have a dead orchestrator
     process and need the post-crash helper below.
     """
-    from pyforge.hydration import _force_drop_orphan
+    from quorin.hydration import _force_drop_orphan
 
     _force_drop_orphan(redis_client, schema, segment)
 
@@ -70,18 +70,18 @@ def simulate_watchdog_post_crash_cleanup(
 
     Atomically:
     1. PID-reuse guard via ``heartbeats[pid]``.
-    2. SMEMBERS ``pyforge:pid_segments:{dead_pid}``.
+    2. SMEMBERS ``quorin:pid_segments:{dead_pid}``.
     3. Per segment: DECR refcount, SADD-to-cleanup-queue + clear
        schema:current via the sidetable when refcount hits zero.
-    4. DEL ``pyforge:pid_segments:{dead_pid}``.
-    5. HDEL ``pyforge:heartbeats {dead_pid}``.
+    4. DEL ``quorin:pid_segments:{dead_pid}``.
+    5. HDEL ``quorin:heartbeats {dead_pid}``.
 
     Then this helper :func:`posix_shm.unlink`'s each returned name
     (Lua can't do POSIX syscalls).
 
     Returns the number of segments successfully unlinked. Returns 0
     if the PID-reuse guard tripped (caller can detect by checking
-    ``pyforge:pid_segments:{dead_pid}`` still has members).
+    ``quorin:pid_segments:{dead_pid}`` still has members).
 
     PID-reuse guard handling
     ------------------------
@@ -132,7 +132,7 @@ def drain_cleanup_queue(
     *,
     batch: int = 1024,
 ) -> int:
-    """Drain ``pyforge:cleanup_queue`` via the real watchdog drain Lua.
+    """Drain ``quorin:cleanup_queue`` via the real watchdog drain Lua.
 
     Returns count drained. Used by tests to simulate the watchdog's
     drain pass after a clean ``registry.close`` (e.g. integration
@@ -153,7 +153,7 @@ def drain_cleanup_queue(
 
 
 # Re-export the key helpers so chaos tests don't need to reach into
-# pyforge.shm's private surface in two places (the helpers above are
+# quorin.shm's private surface in two places (the helpers above are
 # the canonical entry points, but tests that need to introspect Redis
 # state directly can use these).
 __all__ = [

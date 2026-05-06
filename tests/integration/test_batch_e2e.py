@@ -1,4 +1,4 @@
-"""End-to-end integration tests for pyforge.assembly.assemble_batch (Step 8).
+"""End-to-end integration tests for quorin.assembly.assemble_batch (Step 8).
 
 Goes through the real ``SegmentRegistry`` path. Verifies the new batch
 kernel works against segments created with the registry's full lifecycle,
@@ -21,11 +21,11 @@ pytestmark = [
 ]
 
 from _helpers import pack_row  # noqa: E402
-from pyforge.assembly import assemble, assemble_batch, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.pool import BatchBufferPool  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
+from quorin.assembly import assemble, assemble_batch, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.pool import BatchBufferPool  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)

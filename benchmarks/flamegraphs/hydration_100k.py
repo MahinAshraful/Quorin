@@ -26,16 +26,16 @@ N_ENTITIES = 100_000
 
 
 def _redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 def main() -> None:
     # Heavy imports deferred so module-load is cheap (py-spy attaches early).
     import redis
 
-    from pyforge.hydration import hydrate
-    from pyforge.offline import ParquetDatasetStore
-    from pyforge.shm import SegmentRegistry
+    from quorin.hydration import hydrate
+    from quorin.offline import ParquetDatasetStore
+    from quorin.shm import SegmentRegistry
 
     redis_client = redis.Redis.from_url(_redis_url(), decode_responses=False)
     redis_client.ping()  # fail fast if Redis is unreachable
@@ -43,7 +43,7 @@ def main() -> None:
 
     # Drop any prior schema:current pointer so hydrate's precondition #1 passes.
     safe = Schema200Field.__name__.replace(".", "_")
-    redis_client.delete(f"pyforge:schema:{safe}:current".encode())
+    redis_client.delete(f"quorin:schema:{safe}:current".encode())
 
     print(f"Populating Parquet dataset with {N_ENTITIES:,} entities ...", flush=True)
     t0 = time.monotonic()
@@ -81,12 +81,12 @@ def main() -> None:
     finally:
         # Best-effort segment cleanup; leaves /dev/shm clean for the next run.
         try:
-            current_key = f"pyforge:schema:{safe}:current".encode()
+            current_key = f"quorin:schema:{safe}:current".encode()
             seg_name_b = redis_client.get(current_key)
             if seg_name_b:
                 import contextlib
 
-                from pyforge._internal import posix_shm
+                from quorin._internal import posix_shm
 
                 seg_name = seg_name_b.decode()
                 redis_client.delete(current_key)

@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.watchdog (Step 14).
+"""Benchmarks for quorin.watchdog (Step 14).
 
 One bench: ``test_watchdog_tick_idle_100_pids`` — measures the cost of
 a single ``WatchdogState.run_one_tick`` against 100 alive PIDs. The
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
 
 import redis  # noqa: E402
 
-from pyforge.watchdog import WatchdogState  # noqa: E402
+from quorin.watchdog import WatchdogState  # noqa: E402
 
 
 def _populate_heartbeats(
@@ -45,7 +45,7 @@ def _populate_heartbeats(
         # Distinct create_time per pid so the cross-check has unique
         # bit patterns to compare. Wall_time advances each fake-tick.
         create_ns = 1_700_000_000_000_000_000 + i  # arbitrary base
-        pipe.hset("pyforge:heartbeats", str(pid), f"{create_ns}:{1_000 + i}".encode())
+        pipe.hset("quorin:heartbeats", str(pid), f"{create_ns}:{1_000 + i}".encode())
         create_times[pid] = create_ns
     pipe.execute()
     return create_times
@@ -96,14 +96,14 @@ def test_watchdog_tick_idle_100_pids(
         pipe = redis_client.pipeline(transaction=False)
         for pid, ct_ns in populated_redis.items():
             wall = 1000 + counter["tick"] * 1000
-            pipe.hset("pyforge:heartbeats", str(pid), f"{ct_ns}:{wall}".encode())
+            pipe.hset("quorin:heartbeats", str(pid), f"{ct_ns}:{wall}".encode())
         pipe.execute()
 
     psutil_factory = _make_psutil_mock(populated_redis)
 
     def _one_tick() -> None:
         _bump_walls()
-        with patch("pyforge.watchdog.psutil.Process", side_effect=psutil_factory):
+        with patch("quorin.watchdog.psutil.Process", side_effect=psutil_factory):
             state.run_one_tick()
 
     # Use pedantic to give pytest-benchmark explicit control over rounds

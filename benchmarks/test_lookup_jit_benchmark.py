@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge._internal.lookup_kernel.lookup_jit (Step 16c).
+"""Benchmarks for quorin._internal.lookup_kernel.lookup_jit (Step 16c).
 
 Direct head-to-head against test_layout_benchmark.py's pure-Python
 lookup benches. The Step 16c trip-wire bench is
@@ -25,21 +25,21 @@ pytestmark = pytest.mark.skipif(
     reason="lookup_kernel requires POSIX (Linux/WSL2)",
 )
 
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge._internal.crc import crc32_of_bytes  # noqa: E402
-from pyforge._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin._internal.crc import crc32_of_bytes  # noqa: E402
+from quorin._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
+from quorin.layout import (  # noqa: E402
     compute_layout,
     initialize_segment_regions,
     insert,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     compile_schema,
     dtype,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -58,7 +58,7 @@ class _TwoFieldSchema(FeatureSchema):
 
 def _make_segment(capacity: int = 1024) -> Segment:
     layout = compute_layout(_TwoFieldSchema, capacity=capacity)
-    name = f"pyforge_lookup_jit_bench_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    name = f"quorin_lookup_jit_bench_{os.getpid()}_{uuid.uuid4().hex[:8]}"
     handle = posix_shm.create(name, layout.total_size)
     crc = crc32_of_bytes(compile_schema(_TwoFieldSchema).tobytes())
     handle.buf[:HEADER_LEN] = struct.pack(

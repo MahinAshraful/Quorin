@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.hydration.
+"""Unit tests for quorin.hydration.
 
 19 tests with mocked Redis + mocked ParquetDatasetStore. Real
 ``SegmentRegistry`` is NOT used at unit layer; ``registry.create`` is
@@ -8,8 +8,8 @@ end-to-end interaction with a real ``/dev/shm`` segment + the real
 ``insert_many`` kernel. Integration tests (Commit B) will exercise the
 real registry.
 
-Patch targets are LOCKED at ``pyforge.hydration.{prewarm,insert_many}`` —
-the orchestrator imports those names via ``from pyforge._internal.insert_kernel
+Patch targets are LOCKED at ``quorin.hydration.{prewarm,insert_many}`` —
+the orchestrator imports those names via ``from quorin._internal.insert_kernel
 import insert_many, prewarm`` at module load, so patches at the source
 module would not take effect.
 """
@@ -34,17 +34,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge.hydration import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin.hydration import (  # noqa: E402
     EmptyDatasetError,
     HydrationConflictError,
     HydrationResult,
     _force_drop_orphan,
     hydrate,
 )
-from pyforge.schema import DType, FeatureField, FeatureSchema  # noqa: E402
-from pyforge.shm import _key_current, _key_pid_segments, _key_refcount  # noqa: E402
-from pyforge.wal_consumer import KEY_WAL_CONSUMER_LIVENESS  # noqa: E402
+from quorin.schema import DType, FeatureField, FeatureSchema  # noqa: E402
+from quorin.shm import _key_current, _key_pid_segments, _key_refcount  # noqa: E402
+from quorin.wal_consumer import KEY_WAL_CONSUMER_LIVENESS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test schema + fixtures.
@@ -75,8 +75,8 @@ def _make_table(entity_ids: list[str]) -> pa.Table:
 def _kbytes(key: Any) -> bytes:
     """Normalize a Redis key to bytes (matches redis-py's wire format).
 
-    Hydration passes both str (from `_key_*` helpers in pyforge.shm)
-    and bytes (from `KEY_WAL_CONSUMER_LIVENESS` in pyforge.wal_consumer);
+    Hydration passes both str (from `_key_*` helpers in quorin.shm)
+    and bytes (from `KEY_WAL_CONSUMER_LIVENESS` in quorin.wal_consumer);
     the fake unifies them by storing bytes-keyed.
     """
     if isinstance(key, bytes):
@@ -450,7 +450,7 @@ def test_hydrate_unwinds_on_insert_failure(
     mock_store.latest_features.return_value = _make_table(eids)
 
     with (
-        patch("pyforge.hydration.insert_many", side_effect=RuntimeError("boom")),
+        patch("quorin.hydration.insert_many", side_effect=RuntimeError("boom")),
         pytest.raises(RuntimeError, match="boom"),
     ):
         hydrate(_S, mock_store, mock_registry, redis_client=fake_redis)
@@ -493,7 +493,7 @@ def test_hydrate_force_drop_orphan_proceeds_when_redis_pipeline_fails(
 
     with (
         patch.object(fake_redis, "pipeline", side_effect=bad_pipeline),
-        patch("pyforge.hydration.insert_many", side_effect=RuntimeError("insert boom")),
+        patch("quorin.hydration.insert_many", side_effect=RuntimeError("insert boom")),
         pytest.raises(RuntimeError, match="insert boom"),
     ):
         hydrate(_S, mock_store, mock_registry, redis_client=fake_redis)
@@ -550,8 +550,8 @@ def test_hydrate_force_drop_orphan_on_cancelled_during_insert(
     mock_store.latest_features.return_value = _make_table(eids)
 
     with (
-        patch("pyforge.hydration.insert_many", side_effect=asyncio.CancelledError),
-        patch("pyforge.hydration.logger.exception") as mock_logexc,
+        patch("quorin.hydration.insert_many", side_effect=asyncio.CancelledError),
+        patch("quorin.hydration.logger.exception") as mock_logexc,
         pytest.raises(asyncio.CancelledError),
     ):
         hydrate(_S, mock_store, mock_registry, redis_client=fake_redis)
@@ -585,7 +585,7 @@ def test_hydrate_no_orphan_on_cancelled_during_create(
     mock_registry.create.side_effect = asyncio.CancelledError
 
     with (
-        patch("pyforge.hydration.logger.exception") as mock_logexc,
+        patch("quorin.hydration.logger.exception") as mock_logexc,
         pytest.raises(asyncio.CancelledError),
     ):
         hydrate(_S, mock_store, mock_registry, redis_client=fake_redis)
@@ -658,8 +658,8 @@ def test_hydrate_calls_prewarm_before_insert_many(
     """prewarm() must be called before insert_many() — locks the
     "first-call LLVM compile is excluded from elapsed_seconds" contract.
 
-    Patch target: `pyforge.hydration.{prewarm,insert_many}` (local
-    references at module load), NOT `pyforge._internal.insert_kernel.*`.
+    Patch target: `quorin.hydration.{prewarm,insert_many}` (local
+    references at module load), NOT `quorin._internal.insert_kernel.*`.
     """
     eids = [f"entity_{i}" for i in range(10)]
     mock_store.latest_features.return_value = _make_table(eids)
@@ -675,8 +675,8 @@ def test_hydrate_calls_prewarm_before_insert_many(
         return len(eids)
 
     with (
-        patch("pyforge.hydration.prewarm", side_effect=record_prewarm),
-        patch("pyforge.hydration.insert_many", side_effect=record_insert),
+        patch("quorin.hydration.prewarm", side_effect=record_prewarm),
+        patch("quorin.hydration.insert_many", side_effect=record_insert),
     ):
         hydrate(_S, mock_store, mock_registry, redis_client=fake_redis)
 
@@ -709,7 +709,7 @@ def test_force_drop_orphan_idempotent_when_called_twice(
     assert _kbytes(_key_current(_S)) not in fake_redis._kv
 
 
-# Reference test for shm.py imports — pyforge/shm.py exposes both
+# Reference test for shm.py imports — quorin/shm.py exposes both
 # pid/pid_segments helpers; we import them in hydration.py. Validate the
 # import resolves at this layer.
 def test_imports_from_shm_helpers_resolve() -> None:
@@ -717,7 +717,7 @@ def test_imports_from_shm_helpers_resolve() -> None:
     assert callable(_key_current)
     assert callable(_key_refcount)
     assert callable(_key_pid_segments)
-    assert _key_pid_segments(pid).startswith("pyforge:pid_segments:")
+    assert _key_pid_segments(pid).startswith("quorin:pid_segments:")
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +729,7 @@ def test_force_drop_orphan_clears_schema_current(
     fake_redis: _FakeRedis,
     real_segment: Any,
 ) -> None:
-    """``_force_drop_orphan`` clears ``pyforge:schema:{name}:current``.
+    """``_force_drop_orphan`` clears ``quorin:schema:{name}:current``.
 
     Step 13 already had this — Step 14 doesn't change the contract,
     just locks it via test that any future "consolidation" of cleanup
@@ -746,11 +746,11 @@ def test_force_drop_orphan_clears_sidetable(
     fake_redis: _FakeRedis,
     real_segment: Any,
 ) -> None:
-    """Step 14: ``_force_drop_orphan`` HDELs ``pyforge:segment_to_schema``
+    """Step 14: ``_force_drop_orphan`` HDELs ``quorin:segment_to_schema``
     so the watchdog doesn't later see a stale sidetable entry pointing
     at an already-unlinked segment.
     """
-    from pyforge.shm import KEY_SEGMENT_TO_SCHEMA
+    from quorin.shm import KEY_SEGMENT_TO_SCHEMA
 
     sidetable_key = _kbytes(KEY_SEGMENT_TO_SCHEMA)
     seg_name_bytes = real_segment.name.encode()
@@ -773,7 +773,7 @@ def test_force_drop_orphan_idempotent_with_sidetable(
     raise even if the field is already gone (HDEL of missing field
     returns 0, not an error).
     """
-    from pyforge.shm import KEY_SEGMENT_TO_SCHEMA
+    from quorin.shm import KEY_SEGMENT_TO_SCHEMA
 
     sidetable_key = _kbytes(KEY_SEGMENT_TO_SCHEMA)
     seg_name_bytes = real_segment.name.encode()

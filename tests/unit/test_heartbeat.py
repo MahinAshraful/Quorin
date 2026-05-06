@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.heartbeat (Step 14).
+"""Unit tests for quorin._internal.heartbeat (Step 14).
 
 Most tests use a mock Redis client to drive deterministic behavior.
 Two tests use real Redis:
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-from pyforge._internal import heartbeat  # noqa: E402
+from quorin._internal import heartbeat  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

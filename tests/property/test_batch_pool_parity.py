@@ -1,4 +1,4 @@
-"""Parity tests: pyforge.assembly.assemble_batch with pooled vs fresh out=.
+"""Parity tests: quorin.assembly.assemble_batch with pooled vs fresh out=.
 
 Asserts the buffer-pool integration produces byte-identical results to a
 freshly-allocated output buffer, and that the pool's ``available`` count
@@ -27,10 +27,10 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge.assembly import assemble_batch, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.pool import BatchBufferPool  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.assembly import assemble_batch, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.pool import BatchBufferPool  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 
 # Module-level schema for the bounded-availability property test (the test

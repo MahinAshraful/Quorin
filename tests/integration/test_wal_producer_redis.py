@@ -2,7 +2,7 @@
 
 Gated on ``@pytest.mark.integration``; requires the docker-compose Redis
 service. The autouse ``_shm_test_isolation`` fixture in conftest scrubs
-``pyforge:*`` keys after every test, so the stream is fresh between tests.
+``quorin:*`` keys after every test, so the stream is fresh between tests.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ import msgpack
 import pytest
 import redis
 
-from pyforge._internal.pydantic_factory import clear_cache, field_order_for
-from pyforge.schema import FeatureField, FeatureSchema, dtype
-from pyforge.wal import DEFAULT_STREAM_KEY, PROCESSED_KEY_PREFIX, WALProducer, WriteSyncTimeoutError
+from quorin._internal.pydantic_factory import clear_cache, field_order_for
+from quorin.schema import FeatureField, FeatureSchema, dtype
+from quorin.wal import DEFAULT_STREAM_KEY, PROCESSED_KEY_PREFIX, WALProducer, WriteSyncTimeoutError
 
 pytestmark = pytest.mark.integration
 
@@ -68,10 +68,10 @@ def test_write_returns_monotonic_ids(producer: WALProducer) -> None:
 
 
 def test_stream_length_respects_maxlen_approximate(redis_client: redis.Redis) -> None:
-    p = WALProducer(redis_client, stream_key=b"pyforge:wal", maxlen=200)
+    p = WALProducer(redis_client, stream_key=b"quorin:wal", maxlen=200)
     for i in range(1500):
         p.write(_IntS, f"e-{i}", _values())
-    length = redis_client.xlen(b"pyforge:wal")
+    length = redis_client.xlen(b"quorin:wal")
     # ``approximate=True`` allows ~10% slack; assert "well under 1500" rather
     # than an exact number. Some Redis builds trim at slightly more.
     assert length < 1500

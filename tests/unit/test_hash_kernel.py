@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.hash_kernel.blake2b_8.
+"""Unit tests for quorin._internal.hash_kernel.blake2b_8.
 
 The kernel must produce byte-identical output to ``hashlib.blake2b(input,
 digest_size=8)`` for any input. Pinned-hash invariant #5 locks this:
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
     reason="hash_kernel requires POSIX (Linux/WSL2) for the lookup-jit hot path",
 )
 
-from pyforge._internal.hash_kernel import blake2b_8, prewarm  # noqa: E402
+from quorin._internal.hash_kernel import blake2b_8, prewarm  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Pre-warm so the first test doesn't pay ~100-200 ms compile cost.

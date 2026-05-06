@@ -18,8 +18,8 @@ identical to Step 16a. See ADR-015 §7b for the full rejection rationale
 and revisit conditions.
 
 To re-run this orchestrator on a venue with tmpfs THP enabled: restore
-the ``hugepage`` kwarg threading on ``pyforge/_internal/posix_shm.py``
-+ ``pyforge/shm.py`` + ``tests/_helpers.py::make_segment`` +
+the ``hugepage`` kwarg threading on ``quorin/_internal/posix_shm.py``
++ ``quorin/shm.py`` + ``tests/_helpers.py::make_segment`` +
 ``benchmarks/test_assembly_benchmark.py::seg_200_field``'s env-var read
 (per the Rev-10-era git history before the REJECT finalization commit),
 then ``python benchmarks/runs/step16_madvise_ab.py --num-runs 20`` on a
@@ -46,7 +46,7 @@ distinguished from "kernel didn't grant hugepages."
 The bench uses ``tests/_helpers.py::make_segment`` which calls
 ``posix_shm.create`` directly — no Redis state, no SegmentRegistry. Per-iter
 cleanup is handled by the fixture's ``release_segment`` teardown. This
-script's only defensive check is ``glob('/dev/shm/pyforge_*')`` at exit.
+script's only defensive check is ``glob('/dev/shm/quorin_*')`` at exit.
 
 Output: ``benchmarks/results/madv_ab.json`` + decision exit code.
   * 0 → SHIP
@@ -114,7 +114,7 @@ def run_one_side(hugepage: bool, num_runs: int, results_dir: Path) -> tuple[list
     failures: list[str] = []
     for i in range(num_runs):
         env = os.environ.copy()
-        env["PYFORGE_AB_HUGEPAGE"] = "1" if hugepage else "0"
+        env["QUORIN_AB_HUGEPAGE"] = "1" if hugepage else "0"
         json_path = results_dir / f"side_{int(hugepage)}_run_{i:02d}.json"
         cmd = [
             sys.executable,
@@ -181,13 +181,13 @@ def main() -> int:
     # steps. The defensive glob at exit only flags segments NEW since this
     # snapshot — i.e. ones THIS orchestrator's subprocesses leaked. Cross-
     # step pollution (e.g. a SIGBUSed LARGE+RECORD step leaving stale
-    # pyforge_* segments behind) is the upstream step's problem and must
+    # quorin_* segments behind) is the upstream step's problem and must
     # NOT prevent the MADV A/B from writing its JSON. Run #31 surfaced this:
     # without the snapshot diff, we'd raise SystemExit before write_text().
-    pre_existing_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
+    pre_existing_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("quorin_*")}
     if pre_existing_shm:
         print(
-            f"NOTE: {len(pre_existing_shm)} pre-existing /dev/shm/pyforge_* segments "
+            f"NOTE: {len(pre_existing_shm)} pre-existing /dev/shm/quorin_* segments "
             f"observed at startup (probably leaked by a prior workflow step). "
             f"Snapshotted; only NEW segments will be flagged at exit."
         )
@@ -277,11 +277,11 @@ def main() -> int:
     # SIGKILL during the bench). Operator should investigate causes via
     # the failure stderr_tail values printed during run_one_side AND
     # committed to the JSON's false_failures/true_failures lists.
-    current_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("pyforge_*")}
+    current_shm: set[str] = {str(p) for p in Path("/dev/shm").glob("quorin_*")}
     leaked = sorted(current_shm - pre_existing_shm)
     if leaked:
         print(
-            f"WARNING: this run added {len(leaked)} /dev/shm/pyforge_* segments "
+            f"WARNING: this run added {len(leaked)} /dev/shm/quorin_* segments "
             f"(probably subprocess crashes before fixture teardown). "
             f"Sample: {leaked[:5]}",
             flush=True,

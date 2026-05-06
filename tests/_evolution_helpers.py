@@ -15,14 +15,14 @@ from typing import Any
 import numpy as np
 
 import _helpers as h
-from pyforge import layout
-from pyforge.schema import (
+from quorin import layout
+from quorin.schema import (
     DTYPE_TO_NUMPY,
     DType,
     FeatureField,
     FeatureSchema,
 )
-from pyforge.shm import (
+from quorin.shm import (
     KEY_SEGMENT_TO_SCHEMA,
     Segment,
     _key_pid_segments,
@@ -36,11 +36,11 @@ def make_segment_with_random_data(
     *,
     capacity: int | None = None,
     rng_seed: int = 0,
-    name_prefix: str = "pyforge_test_evo",
+    name_prefix: str = "quorin_test_evo",
 ) -> Segment:
     """Create a non-Redis-tracked segment and populate it with ``n_rows``
     randomly-generated entities. Used by unit tests that exercise
-    :func:`pyforge.evolution._build_translation_table` directly.
+    :func:`quorin.evolution._build_translation_table` directly.
 
     Returns the segment; caller releases via ``release_segment``.
     """
@@ -61,7 +61,7 @@ def make_segment_with_specific_floats(
     rows: list[tuple[str, dict[str, np.ndarray[Any, np.dtype[Any]]]]],
     *,
     capacity: int | None = None,
-    name_prefix: str = "pyforge_test_evo",
+    name_prefix: str = "quorin_test_evo",
 ) -> Segment:
     """Like :func:`make_segment_with_random_data` but with caller-supplied
     ``(entity_id, values)`` pairs. Used by the NaN bit-pattern test to
@@ -154,13 +154,13 @@ def write_legacy_format_message_to_wal(
     The blob is a msgpack list of ``legacy_values_count`` zero-floats. When
     the consumer's NEW schema has more fields, ``pack_row_from_list`` raises
     ValueError on length mismatch (verified in
-    ``pyforge/_internal/row_pack.py:172-173``).
+    ``quorin/_internal/row_pack.py:172-173``).
     """
     import msgpack  # local import — msgpack is a test-time dependency
 
     blob = msgpack.packb([0.0] * legacy_values_count, use_bin_type=True)
     msg_id = redis_client.xadd(
-        b"pyforge:wal",
+        b"quorin:wal",
         {
             b"schema": schema_name.encode("utf-8"),
             b"entity_id": entity_id.encode("utf-8"),

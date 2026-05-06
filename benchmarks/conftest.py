@@ -8,8 +8,8 @@ wire dependency order.
 Step 16 added (per the plan):
   * ``cold_cache_clobber`` — L3-sized clobber array for honest cold-CPU-cache
     measurements (P3 + C3).
-  * ``running_watchdog`` — background ``pyforge.watchdog`` subprocess that
-    drains ``pyforge:cleanup_queue`` so /dev/shm doesn't leak across bench
+  * ``running_watchdog`` — background ``quorin.watchdog`` subprocess that
+    drains ``quorin:cleanup_queue`` so /dev/shm doesn't leak across bench
     runs (E1).
   * ``running_consumer_50_field`` — real ``WALConsumer`` thread for the
     end-to-end ``write_sync`` RTT bench, with ``NoopOfflineWriter`` so we
@@ -49,7 +49,7 @@ def isolate_gc() -> Iterator[None]:
 
 
 def _redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 @pytest.fixture(scope="session")
@@ -111,10 +111,10 @@ def cold_cache_clobber() -> tuple[np.ndarray, int]:
 
 @pytest.fixture(scope="session")
 def running_watchdog(redis_client: redis.Redis) -> Iterator[subprocess.Popen[bytes]]:
-    """Background ``pyforge.watchdog`` subprocess for hydration / write_sync benches.
+    """Background ``quorin.watchdog`` subprocess for hydration / write_sync benches.
 
     Without this, /dev/shm leaks across bench runs: refcount=0 segments stay
-    in ``pyforge:cleanup_queue`` until something drains them. First run passes;
+    in ``quorin:cleanup_queue`` until something drains them. First run passes;
     subsequent runs may fail with "segment exists" or eventually fill /dev/shm.
 
     Cadence (LOCKED at production default per ADR-013): ``--tick-interval-seconds 30``
@@ -123,7 +123,7 @@ def running_watchdog(redis_client: redis.Redis) -> Iterator[subprocess.Popen[byt
     bench because ``_populate_old`` loops 10k CPU-bound ``layout.insert``
     calls that hold the GIL long enough to starve the heartbeat thread for
     >4s, the watchdog declared the bench-process "dead", and the cleanup-
-    Lua DEL'd ``pyforge:schema:{name}:current`` mid-bench. The 150s
+    Lua DEL'd ``quorin:schema:{name}:current`` mid-bench. The 150s
     production cadence keeps the watchdog functional for catching real
     crashes between bench files (which is the only realistic dead-PID
     case in a bench session) without spuriously reaping live benches.
@@ -147,7 +147,7 @@ def running_watchdog(redis_client: redis.Redis) -> Iterator[subprocess.Popen[byt
         [
             sys.executable,
             "-m",
-            "pyforge.watchdog",
+            "quorin.watchdog",
             "--redis",
             _redis_url(),
             "--tick-interval-seconds",
@@ -200,7 +200,7 @@ def running_consumer_50_field(
 
     Lifecycle: the consumer thread starts here, runs until session teardown.
     The bench's producer writes to the same Redis Stream the consumer reads;
-    ``write_sync`` polls ``pyforge:processed:{msg_id}`` which the consumer
+    ``write_sync`` polls ``quorin:processed:{msg_id}`` which the consumer
     sets after ``layout.insert`` completes (i.e. online-store durability).
     """
     if sys.platform != "linux":
@@ -209,9 +209,9 @@ def running_consumer_50_field(
     # Defer heavy imports until we know we're on Linux + Redis is reachable.
     import redis.asyncio as redis_async
 
-    from pyforge.schema import FeatureField, FeatureSchema, dtype
-    from pyforge.shm import SegmentRegistry
-    from pyforge.wal_consumer import NoopOfflineWriter, WALConsumer
+    from quorin.schema import FeatureField, FeatureSchema, dtype
+    from quorin.shm import SegmentRegistry
+    from quorin.wal_consumer import NoopOfflineWriter, WALConsumer
 
     # Distinct schema class so we don't collide with other benches' segments
     # in /dev/shm.
@@ -225,8 +225,8 @@ def running_consumer_50_field(
 
     # Distinct stream + group so we don't collide with other tests' WAL state.
     # WALConsumer takes stream_key as bytes but group_name/consumer_name as str.
-    bench_stream = b"pyforge:wal:bench:rtt:50f"
-    bench_group = "pyforge_bench_rtt_50f_consumers"
+    bench_stream = b"quorin:wal:bench:rtt:50f"
+    bench_group = "quorin_bench_rtt_50f_consumers"
 
     # Drain any stale state from previous bench runs (best-effort).
     redis_client.delete(bench_stream)

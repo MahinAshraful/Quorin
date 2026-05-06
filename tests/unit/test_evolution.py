@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`pyforge.evolution`.
+"""Unit tests for :mod:`quorin.evolution`.
 
 Covers (per ADR-014 / Step 15 plan §5.1):
 
@@ -34,8 +34,8 @@ pytestmark = pytest.mark.skipif(
 
 import _evolution_helpers as eh  # noqa: E402
 
-from pyforge import layout  # noqa: E402
-from pyforge.evolution import (  # noqa: E402
+from quorin import layout  # noqa: E402
+from quorin.evolution import (  # noqa: E402
     _DTYPE_WIDENING,
     UpgradeAbortedError,
     UpgradeConflictError,
@@ -46,7 +46,7 @@ from pyforge.evolution import (  # noqa: E402
     _cleanup_orphan_new_segment,
     can_upgrade,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     DTYPE_TO_NUMPY,
     DType,
     FeatureField,
@@ -288,7 +288,7 @@ def test_dtype_widening_table_membership() -> None:
 
 
 def test_upgrade_schema_rejects_class_name_mismatch() -> None:
-    from pyforge.evolution import upgrade_schema
+    from quorin.evolution import upgrade_schema
 
     class _A(FeatureSchema):
         version = 1
@@ -308,7 +308,7 @@ def test_upgrade_schema_rejects_class_name_mismatch() -> None:
 
 
 def test_upgrade_schema_rejects_when_can_upgrade_fails() -> None:
-    from pyforge.evolution import upgrade_schema
+    from quorin.evolution import upgrade_schema
 
     old, new = _build_pair(
         [FeatureField("a", DType.FLOAT32)],
@@ -389,7 +389,7 @@ def test_build_translation_table_widen_dtype() -> None:
         old_a_values: list[float] = []
         old_b_values: list[int] = []
         for entity_id, _row_offset in layout.iterate_occupied(seg_old):
-            from pyforge.serving import assemble
+            from quorin.serving import assemble
 
             vec = assemble(seg_old, entity_id)
             # _SchemaV1's assembly order: a (1) + b (1) + emb (4) = 6 floats.
@@ -501,22 +501,22 @@ def test_orphan_cleanup_does_not_delete_schema_current() -> None:
 
     # Mock segment.
     seg = Mock()
-    seg.name = "pyforge_TestSchema_v2_abcd1234"
+    seg.name = "quorin_TestSchema_v2_abcd1234"
     seg.handle = Mock()
 
     # Patch posix_shm so we don't actually unlink anything.
-    import pyforge.evolution
+    import quorin.evolution
 
-    real_unlink = pyforge.evolution.posix_shm.unlink
-    real_close = pyforge.evolution.posix_shm.close
-    pyforge.evolution.posix_shm.unlink = Mock()  # type: ignore[assignment]
-    pyforge.evolution.posix_shm.close = Mock()  # type: ignore[assignment]
+    real_unlink = quorin.evolution.posix_shm.unlink
+    real_close = quorin.evolution.posix_shm.close
+    quorin.evolution.posix_shm.unlink = Mock()  # type: ignore[assignment]
+    quorin.evolution.posix_shm.close = Mock()  # type: ignore[assignment]
 
     try:
         _cleanup_orphan_new_segment(seg, redis_client, _SchemaV1)
     finally:
-        pyforge.evolution.posix_shm.unlink = real_unlink  # type: ignore[assignment]
-        pyforge.evolution.posix_shm.close = real_close  # type: ignore[assignment]
+        quorin.evolution.posix_shm.unlink = real_unlink  # type: ignore[assignment]
+        quorin.evolution.posix_shm.close = real_close  # type: ignore[assignment]
 
     # Verify the pipeline did NOT include `delete(_key_current(...))`.
     # The hydrate orphan cleanup DOES include that op; this test catches
@@ -525,7 +525,7 @@ def test_orphan_cleanup_does_not_delete_schema_current() -> None:
     assert "delete" in call_names  # refcount delete IS expected
     delete_args = [c[1][0] for c in pipeline_mock.method_calls if c[0] == "delete"]
     # The only delete should be the refcount key — NOT the schema:current key.
-    schema_current_key = "pyforge:schema:_SchemaV1:current"
+    schema_current_key = "quorin:schema:_SchemaV1:current"
     assert all(schema_current_key not in str(arg) for arg in delete_args), (
         f"orphan cleanup wrongly deleted schema:current: {delete_args}"
     )
@@ -549,7 +549,7 @@ def test_orphan_cleanup_handles_none_segment() -> None:
 
 def test_row_byte_offsets_by_name_round_trips() -> None:
     """The internal helper that maps name → byte_offset for the OLD layout."""
-    from pyforge.evolution import _row_byte_offsets_by_name
+    from quorin.evolution import _row_byte_offsets_by_name
 
     seg = eh.make_segment_with_random_data(_SchemaV1, n_rows=1)
     try:

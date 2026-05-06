@@ -622,60 +622,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyforge"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "msgpack" },
-    { name = "numba" },
-    { name = "numpy" },
-    { name = "posix-ipc", marker = "sys_platform != 'win32'" },
-    { name = "prometheus-client" },
-    { name = "psutil" },
-    { name = "pyarrow" },
-    { name = "pydantic" },
-    { name = "redis" },
-    { name = "structlog" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "py-spy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-benchmark" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
-    { name = "msgpack", specifier = ">=1.0,<2.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
-    { name = "numba", specifier = ">=0.59,<0.61" },
-    { name = "numpy", specifier = ">=1.26,<2.0" },
-    { name = "posix-ipc", marker = "sys_platform != 'win32'", specifier = ">=1.1,<2.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "prometheus-client", specifier = ">=0.19" },
-    { name = "psutil", specifier = ">=5.9" },
-    { name = "py-spy", marker = "extra == 'dev'", specifier = ">=0.3" },
-    { name = "pyarrow", specifier = ">=14.0,<15.0" },
-    { name = "pydantic", specifier = ">=2.5,<3.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "redis", specifier = ">=5.0,<6.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "structlog", specifier = ">=24.0" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "pygments"
 version = "2.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -807,6 +753,60 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
 ]
+
+[[package]]
+name = "quorin"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "msgpack" },
+    { name = "numba" },
+    { name = "numpy" },
+    { name = "posix-ipc", marker = "sys_platform != 'win32'" },
+    { name = "prometheus-client" },
+    { name = "psutil" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "redis" },
+    { name = "structlog" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "py-spy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-benchmark" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
+    { name = "msgpack", specifier = ">=1.0,<2.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "numba", specifier = ">=0.59,<0.61" },
+    { name = "numpy", specifier = ">=1.26,<2.0" },
+    { name = "posix-ipc", marker = "sys_platform != 'win32'", specifier = ">=1.1,<2.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
+    { name = "prometheus-client", specifier = ">=0.19" },
+    { name = "psutil", specifier = ">=5.9" },
+    { name = "py-spy", marker = "extra == 'dev'", specifier = ">=0.3" },
+    { name = "pyarrow", specifier = ">=14.0,<15.0" },
+    { name = "pydantic", specifier = ">=2.5,<3.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "redis", specifier = ">=5.0,<6.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "structlog", specifier = ">=24.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "redis"

@@ -34,14 +34,14 @@ import pyarrow as pa  # noqa: E402
 from hypothesis import HealthCheck, given, settings  # noqa: E402
 
 from _helpers import build_dynamic_schema, field_list_strategy  # noqa: E402
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     _RESERVED_FIELD_NAMES,
 )
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     clear_cache as clear_arrow_cache,
 )
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import DType, FeatureField, _hash_name  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import DType, FeatureField, _hash_name  # noqa: E402
 
 _DAY_NS = 86_400_000_000_000
 

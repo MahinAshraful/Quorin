@@ -1,8 +1,8 @@
 # Tier-2 regression gates — ENV-GATED.
 #
 # Consumed by ``benchmarks/regression/check.py --include-tier2``. Runs only
-# on push-to-main and ``workflow_dispatch`` (CI sets PYFORGE_RUN_LARGE_BENCH=1
-# and PYFORGE_RUN_RECORD_BENCH=1 for these). PRs run Tier-1 only.
+# on push-to-main and ``workflow_dispatch`` (CI sets QUORIN_RUN_LARGE_BENCH=1
+# and QUORIN_RUN_RECORD_BENCH=1 for these). PRs run Tier-1 only.
 #
 # Schema: same as tier1.yml. See tier1.yml header for full doc.
 #
@@ -12,8 +12,8 @@
 # What lives here vs Tier-1:
 #   - Heavy scales: 100k / 1M / 5M-row variants of benches that have a
 #     smoke variant in Tier-1.
-#   - PYFORGE_RUN_LARGE_BENCH=1 gates: 30s-2min benches.
-#   - PYFORGE_RUN_RECORD_BENCH=1 gates: 5min+ benches.
+#   - QUORIN_RUN_LARGE_BENCH=1 gates: 30s-2min benches.
+#   - QUORIN_RUN_RECORD_BENCH=1 gates: 5min+ benches.
 #
 # What does NOT live here:
 #   - Tier-2 N=20 fresh-subprocess headline runs from
@@ -22,7 +22,7 @@
 #     are NOT auto-gated in CI (per ADR-015 + plan §3.9 mitigation #3).
 
 # -----------------------------------------------------------------------
-# Step 12 — point-in-time reader (PYFORGE_RUN_LARGE_BENCH=1)
+# Step 12 — point-in-time reader (QUORIN_RUN_LARGE_BENCH=1)
 # -----------------------------------------------------------------------
 test_read_pit_10k_pairs_5m_rows_100_field:
   p99_seconds: 60.0             # 60 s — extrapolated from 500k bench
@@ -34,7 +34,7 @@ test_read_pit_10k_pairs_5m_rows_100_field:
 # (~6 GB peak) are INTENTIONALLY ABSENT from this gate file. ubuntu-latest
 # (~3.5 GB /dev/shm) cumulative-SIGBUSes on 100k hydration after Tier-1 +
 # 100k upgrade benches accumulate state. 1M hydration exceeds the venue
-# ceiling outright. Both benches gate on PYFORGE_RUN_LARGE_SHM_BENCH=1 in
+# ceiling outright. Both benches gate on QUORIN_RUN_LARGE_SHM_BENCH=1 in
 # their pytest.mark.skipif, only set on workflow_dispatch with
 # `-f run_large_shm_bench=true`. Operator-verified contracts live in
 # the bench docstrings + ADR-015 §7 venue gap analysis. Same pattern as
@@ -45,7 +45,7 @@ test_read_pit_10k_pairs_5m_rows_100_field:
 # Step 15 — schema evolution heavy variants
 # -----------------------------------------------------------------------
 test_bench_upgrade_100k_50_field:
-  p99_seconds: 10.0             # 10 s — primary gate (PYFORGE_RUN_LARGE_BENCH=1)
+  p99_seconds: 10.0             # 10 s — primary gate (QUORIN_RUN_LARGE_BENCH=1)
 # 1M-rows-x-50-fields evolution bench — INTENTIONALLY UNGATED (Step 16b).
 # The 10 s spec-acceptance commitment is OPERATOR-VERIFIED, not CI-verified:
 # ubuntu-latest (~3.5 GB /dev/shm) cannot host the bench (~3.2 GB segment).

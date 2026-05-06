@@ -36,11 +36,11 @@ pytestmark = [
 
 import pyarrow as pa  # noqa: E402
 
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     clear_cache as clear_arrow_cache,
 )
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 
 class _S(FeatureSchema):

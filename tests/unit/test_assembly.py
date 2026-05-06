@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.assembly.assemble (Numba kernel).
+"""Unit tests for quorin.assembly.assemble (Numba kernel).
 
 Mirrors tests/unit/test_serving.py — same schemas, same edge cases — but
 exercises the Numba path. Step 5's parity test
@@ -20,9 +20,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.assembly import assemble, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.assembly import assemble, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
@@ -31,7 +31,7 @@ from pyforge.schema import (  # noqa: E402
     dtype,
     total_element_count,
 )
-from pyforge.serving import EntityNotFoundError  # noqa: E402
+from quorin.serving import EntityNotFoundError  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level pre-warm so the first test doesn't pay ~300 ms compile cost.
@@ -291,7 +291,7 @@ def test_2d_shape_flattens_c_order() -> None:
 
 
 def test_entity_not_found_raises_same_class() -> None:
-    """pyforge.assembly.assemble raises pyforge.serving.EntityNotFoundError
+    """quorin.assembly.assemble raises quorin.serving.EntityNotFoundError
     (the same class — re-imported, not duplicated)."""
     seg = make_segment(_OneScalarF32, capacity=4)
     try:

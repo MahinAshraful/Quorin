@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.offline.ParquetDatasetStore.
+"""Unit tests for quorin.offline.ParquetDatasetStore.
 
 Covers all Rev-2/3/4 regression items called out in the Step 11 plan.
 The integration suite at ``tests/integration/test_offline_e2e.py``
@@ -23,14 +23,14 @@ pytestmark = pytest.mark.skipif(
 
 import pyarrow.parquet as pq  # noqa: E402
 
-from pyforge._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
-from pyforge.metrics import (  # noqa: E402
+from quorin._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
+from quorin.metrics import (  # noqa: E402
     offline_bytes_written_total,
     offline_files_written_total,
     offline_flush_seconds,
 )
-from pyforge.offline import ParquetDatasetStore, _Bucket  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.offline import ParquetDatasetStore, _Bucket  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     dtype,
@@ -214,7 +214,7 @@ async def test_bucket_aliases_share_underlying_lists(
 async def test_date_cache_reuses_strftime_within_one_day(
     store: ParquetDatasetStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pyforge.offline as offline_mod
+    import quorin.offline as offline_mod
 
     real_dt = offline_mod.datetime
     call_count = {"n": 0}
@@ -522,7 +522,7 @@ async def test_mixed_date_flush_writes_one_file_per_partition(
 
 
 async def test_scalars_only_round_trips(tmp_path: Path) -> None:
-    from pyforge.schema import _hash_name
+    from quorin.schema import _hash_name
 
     store = ParquetDatasetStore(tmp_path)
     # Producer wire order is name-hash-sorted (ADR-008); construct the
@@ -597,7 +597,7 @@ async def test_event_time_far_future_yields_valid_partition(
 async def test_cancellation_during_flush_clears_buffers_and_records_metric(
     store: ParquetDatasetStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pyforge.offline as offline_mod
+    import quorin.offline as offline_mod
 
     cancelled_before = _histogram_count(offline_flush_seconds, outcome="cancelled")
 
@@ -624,7 +624,7 @@ async def test_disk_full_oserror_records_metric_and_unlinks_tmp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pyforge.offline as offline_mod
+    import quorin.offline as offline_mod
 
     err_before = _histogram_count(offline_flush_seconds, outcome="error")
 

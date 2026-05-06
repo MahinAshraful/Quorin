@@ -1,4 +1,4 @@
-"""End-to-end integration tests for pyforge.serving.assemble.
+"""End-to-end integration tests for quorin.serving.assemble.
 
 Goes through the real ``SegmentRegistry`` path (not the bare ``make_segment``
 helper used in unit tests). Verifies that the new ``SegmentLayout.assembly_table``
@@ -21,10 +21,10 @@ pytestmark = [
 ]
 
 from _helpers import pack_row  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
 
 
 class _UserFeatures4(FeatureSchema):

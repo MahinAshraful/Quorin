@@ -25,7 +25,7 @@ pytestmark = [
 
 import redis  # noqa: E402
 
-from pyforge._internal.evolution_lua import (  # noqa: E402
+from quorin._internal.evolution_lua import (  # noqa: E402
     FLIP_SCHEMA_CURRENT_LUA,
     RELEASE_LOCK_LUA,
 )
@@ -58,9 +58,9 @@ def test_flip_happy_path_returns_1_and_updates_current(
     redis_client: redis.Redis,
     flip_script: redis.commands.core.Script,
 ) -> None:
-    key = _unique_key("pyforge:schema:_FlipTest1:current")
-    old_name = b"pyforge_old_v1_aaaa"
-    new_name = b"pyforge_new_v2_bbbb"
+    key = _unique_key("quorin:schema:_FlipTest1:current")
+    old_name = b"quorin_old_v1_aaaa"
+    new_name = b"quorin_new_v2_bbbb"
     redis_client.set(key, old_name)
     try:
         result = flip_script(keys=[key], args=[old_name, new_name])
@@ -75,10 +75,10 @@ def test_flip_race_returns_0_when_current_does_not_match(
     flip_script: redis.commands.core.Script,
 ) -> None:
     """Race lost: another orchestrator already flipped to a different name."""
-    key = _unique_key("pyforge:schema:_FlipTest2:current")
-    other_name = b"pyforge_other_v3_cccc"
-    expected_old = b"pyforge_expected_old_v1"
-    new_name = b"pyforge_new_v2_dddd"
+    key = _unique_key("quorin:schema:_FlipTest2:current")
+    other_name = b"quorin_other_v3_cccc"
+    expected_old = b"quorin_expected_old_v1"
+    new_name = b"quorin_new_v2_dddd"
     redis_client.set(key, other_name)
     try:
         result = flip_script(keys=[key], args=[expected_old, new_name])
@@ -95,9 +95,9 @@ def test_flip_missing_returns_minus_1(
 ) -> None:
     """Operator interference: schema:current was DEL'd between
     open_current and flip."""
-    key = _unique_key("pyforge:schema:_FlipTest3:current")
+    key = _unique_key("quorin:schema:_FlipTest3:current")
     redis_client.delete(key)  # ensure absent
-    result = flip_script(keys=[key], args=[b"pyforge_anything", b"pyforge_new_v2"])
+    result = flip_script(keys=[key], args=[b"quorin_anything", b"quorin_new_v2"])
     assert result == -1
     assert redis_client.get(key) is None
 
@@ -109,10 +109,10 @@ def test_flip_concurrent_only_one_succeeds(
     """Two flip attempts against the same expected_old: first wins, second
     sees a different `current` and returns 0. Atomicity is what makes this
     safe."""
-    key = _unique_key("pyforge:schema:_FlipTest4:current")
-    old_name = b"pyforge_old_v1"
-    new_a = b"pyforge_new_a_v2"
-    new_b = b"pyforge_new_b_v2"
+    key = _unique_key("quorin:schema:_FlipTest4:current")
+    old_name = b"quorin_old_v1"
+    new_a = b"quorin_new_a_v2"
+    new_b = b"quorin_new_b_v2"
     redis_client.set(key, old_name)
     try:
         r1 = flip_script(keys=[key], args=[old_name, new_a])
@@ -133,7 +133,7 @@ def test_release_lock_token_match_dels_key(
     redis_client: redis.Redis,
     release_script: redis.commands.core.Script,
 ) -> None:
-    key = _unique_key("pyforge:upgrade:lock:_LockTest1")
+    key = _unique_key("quorin:upgrade:lock:_LockTest1")
     token = uuid.uuid4().hex.encode("ascii")
     redis_client.set(key, token)
     try:
@@ -150,7 +150,7 @@ def test_release_lock_token_mismatch_no_op(
 ) -> None:
     """Lock auto-expired and a different orchestrator acquired it; original
     holder's release attempt must be a no-op (token mismatch)."""
-    key = _unique_key("pyforge:upgrade:lock:_LockTest2")
+    key = _unique_key("quorin:upgrade:lock:_LockTest2")
     other_token = uuid.uuid4().hex.encode("ascii")
     my_token = uuid.uuid4().hex.encode("ascii")
     assert other_token != my_token
@@ -168,7 +168,7 @@ def test_release_lock_absent_key_no_op(
     redis_client: redis.Redis,
     release_script: redis.commands.core.Script,
 ) -> None:
-    key = _unique_key("pyforge:upgrade:lock:_LockTest3")
+    key = _unique_key("quorin:upgrade:lock:_LockTest3")
     redis_client.delete(key)
     result = release_script(keys=[key], args=[uuid.uuid4().hex.encode("ascii")])
     assert result == 0

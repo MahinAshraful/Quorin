@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.schema.
+"""Benchmarks for quorin.schema.
 
 Spec target: ``compile_schema`` completes a 200-field schema in under 1 ms
 on the dev machine. Not on the hot path, but slow compile here would drag
@@ -7,7 +7,7 @@ the test suite and mask later regressions.
 
 from __future__ import annotations
 
-from pyforge.schema import (
+from quorin.schema import (
     DType,
     FeatureField,
     FeatureSchema,

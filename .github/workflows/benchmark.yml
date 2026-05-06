@@ -68,9 +68,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            pyforge/__pycache__
-            pyforge/_internal/__pycache__
-          key: numba-jit-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock') }}-${{ hashFiles('pyforge/assembly.py', 'pyforge/_internal/insert_kernel.py') }}
+            quorin/__pycache__
+            quorin/_internal/__pycache__
+          key: numba-jit-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock') }}-${{ hashFiles('quorin/assembly.py', 'quorin/_internal/insert_kernel.py') }}
           restore-keys: |
             numba-jit-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock') }}-
             numba-jit-${{ runner.os }}-py3.12-
@@ -80,7 +80,7 @@ jobs:
       # ==========================================================
       - name: Run benchmarks (Tier-1)
         env:
-          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+          QUORIN_REDIS_URL: redis://127.0.0.1:6379/0
         run: |
           uv run pytest benchmarks/ \
             --benchmark-only \
@@ -109,7 +109,7 @@ jobs:
       #
       # Push runs Tier-1 only (~30s, fits comfortably). Dispatch runs
       # the full suite; schedule runs everything except heavy-shm
-      # benches gated by PYFORGE_RUN_LARGE_SHM_BENCH (Step 16b: those
+      # benches gated by QUORIN_RUN_LARGE_SHM_BENCH (Step 16b: those
       # exceed ubuntu-latest's /dev/shm ceiling — bench_upgrade_1m
       # is the canonical example, ~3.2 GB segment vs ~3.5 GB tmpfs).
       # If a future need wants automated heavy-shm coverage, options
@@ -136,9 +136,9 @@ jobs:
       - name: Run benchmarks (Tier-2 LARGE + RECORD)
         if: github.event.inputs.run_large_shm_bench == 'true'
         env:
-          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
-          PYFORGE_RUN_LARGE_BENCH: "1"
-          PYFORGE_RUN_RECORD_BENCH: "1"
+          QUORIN_REDIS_URL: redis://127.0.0.1:6379/0
+          QUORIN_RUN_LARGE_BENCH: "1"
+          QUORIN_RUN_RECORD_BENCH: "1"
           # Step 16b Rev-8: heavy-shm benches gate on EXPLICIT operator opt-in
           # via workflow_dispatch input. `gh workflow run benchmark.yml` (no
           # flags) leaves this UNSET → bench skipif fires → bench skipped →
@@ -149,7 +149,7 @@ jobs:
           # The Rev-7 "auto-set on workflow_dispatch" assumption was wrong:
           # `gh workflow run` defaults to ubuntu-latest, same constrained
           # box as schedule.
-          PYFORGE_RUN_LARGE_SHM_BENCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_large_shm_bench == 'true' && '1' || '' }}
+          QUORIN_RUN_LARGE_SHM_BENCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_large_shm_bench == 'true' && '1' || '' }}
         run: |
           uv run pytest benchmarks/ \
             --benchmark-only \
@@ -173,9 +173,9 @@ jobs:
       - name: Run Tier-2 N=20 orchestrator (slow)
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         env:
-          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
-          PYFORGE_RUN_LARGE_BENCH: "1"
-          PYFORGE_RUN_RECORD_BENCH: "1"
+          QUORIN_REDIS_URL: redis://127.0.0.1:6379/0
+          QUORIN_RUN_LARGE_BENCH: "1"
+          QUORIN_RUN_RECORD_BENCH: "1"
         run: |
           for spec in benchmarks/runs/specs/*.yml; do
             name=$(basename "${spec%.yml}")
@@ -215,7 +215,7 @@ jobs:
         #
         # Step 16b Rev-10: clean /dev/shm pollution from prior workflow
         # steps before running. Run #34 caught this: an upstream SIGBUS
-        # in 100k hydration left ~51 pyforge_* segments behind, filling
+        # in 100k hydration left ~51 quorin_* segments behind, filling
         # /dev/shm; the orchestrator's subprocesses then SIGBUSed at
         # posix_shm.create() because no room. CI-only cleanup (workflow
         # YAML, not orchestrator) so operator workstation runs don't
@@ -223,7 +223,7 @@ jobs:
         if: always() && github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: |
-          rm -f /dev/shm/pyforge_* || true
+          rm -f /dev/shm/quorin_* || true
           uv run python benchmarks/runs/step16_madvise_ab.py \
             --num-runs 20 \
             --output benchmarks/results/madv_ab.json
@@ -235,13 +235,13 @@ jobs:
       #
       # Step 16c: 6 CI-runnable driver scripts in benchmarks/flamegraphs/
       # exercise the headline scenarios. The hydration_1m driver is
-      # operator-only (PYFORGE_RUN_LARGE_SHM_BENCH gate; ubuntu-latest
+      # operator-only (QUORIN_RUN_LARGE_SHM_BENCH gate; ubuntu-latest
       # SIGBUSes — see ADR-015 §7) and excluded from the loop below.
       # ==========================================================
       - name: Record flamegraphs (manual)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.record_flamegraphs == 'true'
         env:
-          PYFORGE_REDIS_URL: redis://127.0.0.1:6379/0
+          QUORIN_REDIS_URL: redis://127.0.0.1:6379/0
         continue-on-error: true
         run: |
           mkdir -p benchmarks/results/flamegraphs

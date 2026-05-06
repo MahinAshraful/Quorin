@@ -30,9 +30,9 @@ import pyarrow.parquet as pq  # noqa: E402
 from hypothesis import HealthCheck, given, settings  # noqa: E402
 
 from _helpers import build_dynamic_schema, field_list_strategy  # noqa: E402
-from pyforge._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import DType, FeatureField, _hash_name  # noqa: E402
+from quorin._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import DType, FeatureField, _hash_name  # noqa: E402
 
 
 def _python_value_for(field: FeatureField, rng: np.random.Generator) -> Any:

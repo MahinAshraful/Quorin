@@ -3,11 +3,11 @@
 Per plan §5.5:
 
 * ``bench_upgrade_10k_50_field`` — smoke (always-on); ~1s native, ~4s WSL2.
-* ``bench_upgrade_100k_50_field`` (PYFORGE_RUN_LARGE_BENCH=1) — primary
+* ``bench_upgrade_100k_50_field`` (QUORIN_RUN_LARGE_BENCH=1) — primary
   perf gate (~5s native).
 * ``bench_consumer_pause_overhead`` — per-iter pause-check MGET cost.
 
-Optional record bench (PYFORGE_RUN_RECORD_BENCH=1):
+Optional record bench (QUORIN_RUN_RECORD_BENCH=1):
 
 * ``bench_upgrade_1m_50_field`` — spec acceptance check; HARD GATE 10s
   native Linux. If RED, Step 16 Numba translation kernel is on the
@@ -34,10 +34,10 @@ pytestmark = pytest.mark.skipif(
 import numpy as np  # noqa: E402
 
 import _helpers as h  # noqa: E402
-from pyforge import layout  # noqa: E402
-from pyforge.evolution import upgrade_schema  # noqa: E402
-from pyforge.schema import DType, FeatureField, FeatureSchema  # noqa: E402
-from pyforge.shm import SegmentRegistry, _key_current  # noqa: E402
+from quorin import layout  # noqa: E402
+from quorin.evolution import upgrade_schema  # noqa: E402
+from quorin.schema import DType, FeatureField, FeatureSchema  # noqa: E402
+from quorin.shm import SegmentRegistry, _key_current  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas — 50-field (smoke + primary gate). Realistic ML schema shape:
@@ -90,7 +90,7 @@ def _populate_old(registry: SegmentRegistry, n_rows: int) -> None:
 
 def _drop(redis_client: Any) -> None:
     redis_client.delete(_key_current(_BenchOld))
-    for k in redis_client.scan_iter(match="pyforge:upgrade:*", count=100):
+    for k in redis_client.scan_iter(match="quorin:upgrade:*", count=100):
         redis_client.delete(k)
 
 
@@ -129,8 +129,8 @@ def test_bench_upgrade_10k_50_field(redis_client: Any, benchmark: Any) -> None:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
-    reason="PYFORGE_RUN_LARGE_BENCH=1 to run 100k bench",
+    os.environ.get("QUORIN_RUN_LARGE_BENCH") != "1",
+    reason="QUORIN_RUN_LARGE_BENCH=1 to run 100k bench",
 )
 def test_bench_upgrade_100k_50_field(redis_client: Any, benchmark: Any) -> None:
     """Primary perf gate: 100k rows x 50 fields. Threshold ~5s native (5x
@@ -167,8 +167,8 @@ def test_bench_upgrade_100k_50_field(redis_client: Any, benchmark: Any) -> None:
 #   * Measurement of record: WSL2 single-sample 9.91 s (90 ms margin under
 #     the 10 s gate). Future operator runs on workstations with adequate
 #     /dev/shm append to the record.
-#   * Two skipifs gate it: PYFORGE_RUN_RECORD_BENCH (existing) +
-#     PYFORGE_RUN_LARGE_SHM_BENCH (Step 16b). The workflow sets the
+#   * Two skipifs gate it: QUORIN_RUN_RECORD_BENCH (existing) +
+#     QUORIN_RUN_LARGE_SHM_BENCH (Step 16b). The workflow sets the
 #     LARGE_SHM var ONLY on ``workflow_dispatch`` — ``schedule`` skips
 #     cleanly so the weekly cron stays green.
 #   * The 10 s commitment lives HERE (this docstring) + ADR-014, NOT in
@@ -181,14 +181,14 @@ def test_bench_upgrade_100k_50_field(redis_client: Any, benchmark: Any) -> None:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_RECORD_BENCH") != "1",
-    reason="PYFORGE_RUN_RECORD_BENCH=1 to run 1M bench (spec acceptance check)",
+    os.environ.get("QUORIN_RUN_RECORD_BENCH") != "1",
+    reason="QUORIN_RUN_RECORD_BENCH=1 to run 1M bench (spec acceptance check)",
 )
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_SHM_BENCH") != "1",
+    os.environ.get("QUORIN_RUN_LARGE_SHM_BENCH") != "1",
     reason=(
         "needs /dev/shm > 4 GB; ubuntu-latest cannot host on schedule "
-        "(ADR-015 §7). Set PYFORGE_RUN_LARGE_SHM_BENCH=1 on operator hosts "
+        "(ADR-015 §7). Set QUORIN_RUN_LARGE_SHM_BENCH=1 on operator hosts "
         "or workflow_dispatch."
     ),
 )
@@ -197,7 +197,7 @@ def test_bench_upgrade_1m_50_field(redis_client: Any, benchmark: Any) -> None:
 
     The 10 s gate is operator-evaluated against the bench's raw round timing,
     NOT framework-enforced via check.py. After running locally with
-    PYFORGE_RUN_RECORD_BENCH=1 PYFORGE_RUN_LARGE_SHM_BENCH=1, read the
+    QUORIN_RUN_RECORD_BENCH=1 QUORIN_RUN_LARGE_SHM_BENCH=1, read the
     autosaved JSON and verify ``np.percentile(stats.data, 99) <= 10.0``.
 
     Measurement of record: WSL2 9.91 s (Step 15 progress entry). Native Linux
@@ -250,7 +250,7 @@ def test_bench_consumer_pause_overhead(redis_client: Any, benchmark: Any) -> Non
     del redis_client  # only requested to ensure dev-up.sh Redis is reachable
     import redis.asyncio
 
-    url = os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    url = os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
     # Persistent event loop + client. Created ONCE before the timed
     # benchmark loop, closed AFTER. Matches what `WALConsumer` holds in
@@ -261,7 +261,7 @@ def test_bench_consumer_pause_overhead(redis_client: Any, benchmark: Any) -> Non
     # connection-establishment cost.
     loop.run_until_complete(async_client.ping())
 
-    ten_keys = [f"pyforge:upgrade:pause:_Sch{i}".encode("ascii") for i in range(10)]
+    ten_keys = [f"quorin:upgrade:pause:_Sch{i}".encode("ascii") for i in range(10)]
 
     async def _do_mget() -> None:
         await async_client.mget(*ten_keys)

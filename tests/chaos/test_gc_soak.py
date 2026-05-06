@@ -31,7 +31,7 @@ pytestmark = [
     ),
 ]
 
-from pyforge._internal.gc_manager import (  # noqa: E402
+from quorin._internal.gc_manager import (  # noqa: E402
     freeze,
     start_collector,
     stop_collector,
@@ -86,7 +86,7 @@ def test_gc_manager_no_memory_leak_under_short_soak() -> None:
 
     # Opt into the timer for this soak test specifically — we want to
     # exercise the timer-thread path, not just the callback. Production
-    # default for Pyforge serving paths is no timer (see ADR-006).
+    # default for Quorin serving paths is no timer (see ADR-006).
     #
     # Order matters: freeze() BEFORE start_collector() avoids the
     # documented callback+freeze interaction (ADR-006). This also avoids

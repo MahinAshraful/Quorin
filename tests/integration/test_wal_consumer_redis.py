@@ -2,7 +2,7 @@
 
 Gated on ``@pytest.mark.integration``; requires the docker-compose Redis
 service. The autouse ``_shm_test_isolation`` fixture in conftest scrubs
-``pyforge:*`` keys and ``/dev/shm/pyforge_*`` after every test.
+``quorin:*`` keys and ``/dev/shm/quorin_*`` after every test.
 
 Tests exercise the producer + consumer end-to-end with real PEL semantics,
 real XACK / XPENDING, and real shm.
@@ -31,19 +31,19 @@ import redis  # noqa: E402
 import redis.asyncio  # noqa: E402
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal.pydantic_factory import clear_cache as clear_pydantic_cache  # noqa: E402
-from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
-from pyforge.layout import lookup  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
-from pyforge.wal import (  # noqa: E402
+from quorin._internal.pydantic_factory import clear_cache as clear_pydantic_cache  # noqa: E402
+from quorin._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
+from quorin.layout import lookup  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
+from quorin.wal import (  # noqa: E402
     DEFAULT_STREAM_KEY,
     PROCESSED_KEY_PREFIX,
     WALProducer,
     WriteSyncTimeoutError,
 )
-from pyforge.wal_consumer import (  # noqa: E402
+from quorin.wal_consumer import (  # noqa: E402
     ConsumerNameInUseError,
     NoopOfflineWriter,
     WALConsumer,
@@ -79,7 +79,7 @@ def _values(i: int = 0) -> dict[str, object]:
 def _pending_count(redis_client: redis.Redis) -> int:
     """xpending count with NOGROUP-tolerance for races with consumer startup."""
     try:
-        info = redis_client.xpending(DEFAULT_STREAM_KEY, "pyforge_consumers")
+        info = redis_client.xpending(DEFAULT_STREAM_KEY, "quorin_consumers")
     except redis.exceptions.ResponseError as e:
         if "NOGROUP" in str(e):
             # Group not created yet (consumer hasn't had a chance to run);
@@ -118,7 +118,7 @@ async def async_redis(redis_client: redis.Redis):
     """
     import os
 
-    url = os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    url = os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
     client = redis.asyncio.Redis.from_url(url, decode_responses=False)
     try:
         await client.ping()

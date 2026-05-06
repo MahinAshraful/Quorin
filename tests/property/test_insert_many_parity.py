@@ -4,8 +4,8 @@ Two properties:
 
 * **P1 — byte-identical parity.** For any random schema (1-5 fields,
   scalar/1D/2D shapes) x random 1-30 entity IDs x random row data, a
-  segment built via the per-row :func:`pyforge.layout.insert` loop is
-  byte-identical to a segment built via :func:`pyforge._internal.insert_kernel.insert_many`
+  segment built via the per-row :func:`quorin.layout.insert` loop is
+  byte-identical to a segment built via :func:`quorin._internal.insert_kernel.insert_many`
   from a PyArrow table of the same data. Locks the bulk kernel against
   any future regression in slot layout, string pool encoding, or
   per-field byte placement.
@@ -49,10 +49,10 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge._internal.arrow_schema import _RESERVED_FIELD_NAMES  # noqa: E402
-from pyforge._internal.insert_kernel import insert_many  # noqa: E402
-from pyforge.layout import insert, lookup  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin._internal.arrow_schema import _RESERVED_FIELD_NAMES  # noqa: E402
+from quorin._internal.insert_kernel import insert_many  # noqa: E402
+from quorin.layout import insert, lookup  # noqa: E402
+from quorin.schema import (  # noqa: E402
     DType,
     FeatureField,
     FeatureSchema,

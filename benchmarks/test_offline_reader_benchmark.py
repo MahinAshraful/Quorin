@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.offline.ParquetDatasetStore.read_point_in_time (Step 12).
+"""Benchmarks for quorin.offline.ParquetDatasetStore.read_point_in_time (Step 12).
 
 Three gated benches + one non-gated record bench (per Step 12 plan,
 Rev-3 polish #12). Datasets are generated in a session-scoped fixture
@@ -28,11 +28,11 @@ pytestmark = pytest.mark.skipif(
 import numpy as np  # noqa: E402
 import pyarrow as pa  # noqa: E402
 
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     clear_cache as clear_arrow_cache,
 )
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
@@ -224,8 +224,8 @@ def test_read_pit_1k_pairs_500k_rows_50_field(
 
 
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
-    reason="Set PYFORGE_RUN_LARGE_BENCH=1 to run the 5M x 100 bench (~15-20 min generation)",
+    os.environ.get("QUORIN_RUN_LARGE_BENCH") != "1",
+    reason="Set QUORIN_RUN_LARGE_BENCH=1 to run the 5M x 100 bench (~15-20 min generation)",
 )
 def test_read_pit_10k_pairs_5m_rows_100_field(
     benchmark: Any, _dataset_5m_100field: tuple[Path, type[FeatureSchema]]
@@ -278,13 +278,13 @@ def test_read_dataset_construction_only(
 # without failing CI on WSL2 disk variance.
 #
 # Skipped by default to keep routine benchmark runs fast. Enable with
-# ``PYFORGE_RUN_RECORD_BENCH=1`` or invoke directly by name.
+# ``QUORIN_RUN_RECORD_BENCH=1`` or invoke directly by name.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_RECORD_BENCH") != "1",
-    reason="Set PYFORGE_RUN_RECORD_BENCH=1 to run the 10M record bench (~15 min generation)",
+    os.environ.get("QUORIN_RUN_RECORD_BENCH") != "1",
+    reason="Set QUORIN_RUN_RECORD_BENCH=1 to run the 10M record bench (~15 min generation)",
 )
 def test_read_pit_10k_pairs_10m_rows_200_field_record(
     benchmark: Any, _dataset_10m_200field: tuple[Path, type[FeatureSchema]]

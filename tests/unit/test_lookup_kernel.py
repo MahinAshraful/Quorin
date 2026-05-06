@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.lookup_kernel.
+"""Unit tests for quorin._internal.lookup_kernel.
 
 Mirror of tests/unit/test_layout.py's `lookup` coverage but exercising
 the Numba-compiled kernel + Python wrapper. Step 16c's parity property
@@ -20,8 +20,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal.lookup_kernel import _lookup_core, lookup_jit, prewarm  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal.lookup_kernel import _lookup_core, lookup_jit, prewarm  # noqa: E402
+from quorin.layout import (  # noqa: E402
     SLOT_BYTES,
     SLOT_FEATURE_ROW_INDEX_OFFSET,
     SLOT_FLAGS_OFFSET,
@@ -30,7 +30,7 @@ from pyforge.layout import (  # noqa: E402
     insert,
     lookup,
 )
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level prewarm so the first test doesn't pay ~100-200 ms compile cost.
@@ -61,7 +61,7 @@ class _TwoFieldSchema(FeatureSchema):
 
 
 def test_hit_first_probe_returns_correct_row_offset() -> None:
-    """Single-entity hit; row_offset matches pyforge.layout.lookup byte-for-byte."""
+    """Single-entity hit; row_offset matches quorin.layout.lookup byte-for-byte."""
     seg = make_segment(_TwoFieldSchema, capacity=64)
     try:
         row = bytes([0xAB]) * seg.layout.row_size
@@ -162,7 +162,7 @@ def test_id_at_max_id_bytes_boundary() -> None:
 def test_id_longer_than_max_id_bytes_returns_none() -> None:
     """ID longer than max_id_bytes returns None (length-mismatch path).
 
-    pyforge.layout.lookup walks the slot table; pool entries are length-
+    quorin.layout.lookup walks the slot table; pool entries are length-
     prefixed and <= max_id_bytes, so pool_len == encoded_id_len always
     fails. lookup_jit must match this semantic: walk + return -1.
     """
@@ -258,7 +258,7 @@ def test_hit_against_real_mask_collision() -> None:
     Mirrors Step 3's test_hash_collision_path_still_finds_correct_entity
     in spirit — both still findable through the linear probe.
     """
-    from pyforge._internal.hash_id import hash_entity_id
+    from quorin._internal.hash_id import hash_entity_id
 
     seg = make_segment(_TwoFieldSchema, capacity=2)  # slot_capacity = 4, mask = 3
     try:

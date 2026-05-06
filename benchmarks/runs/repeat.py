@@ -13,7 +13,7 @@ What 'fresh' means:
     process; a fresh process resets them.
   * NOT fresh: Numba's on-disk JIT cache. Each subprocess's autouse fixture
     in test_assembly_benchmark.py / test_batch_benchmark.py calls
-    ``pyforge.assembly.prewarm()`` BEFORE pytest-benchmark's timed loop.
+    ``quorin.assembly.prewarm()`` BEFORE pytest-benchmark's timed loop.
     JIT compile is paid in setup, not measurement.
 
 Run::
@@ -42,8 +42,8 @@ Environment inheritance (per Step 16 plan, locked):
   ``env=os.environ.copy()`` kwarg. This is intentional — the bench-spec
   YAML can't carry per-environment data like Redis URLs, and we don't want
   the orchestrator to second-guess what the operator set. To avoid
-  accidental PYFORGE_RUN_LARGE_BENCH=1 leakage from a stale parent shell,
-  the orchestrator logs all PYFORGE_RUN_* env vars at startup so the
+  accidental QUORIN_RUN_LARGE_BENCH=1 leakage from a stale parent shell,
+  the orchestrator logs all QUORIN_RUN_* env vars at startup so the
   operator sees what's being passed through.
 """
 
@@ -208,14 +208,14 @@ def aggregate(runs: list[dict[str, float]]) -> dict[str, float]:
 
 
 def _log_env_preflight() -> None:
-    """Log PYFORGE_RUN_* env state so accidental leakage is visible to the operator."""
-    relevant = {k: v for k, v in os.environ.items() if k.startswith("PYFORGE_")}
+    """Log QUORIN_RUN_* env state so accidental leakage is visible to the operator."""
+    relevant = {k: v for k, v in os.environ.items() if k.startswith("QUORIN_")}
     if relevant:
-        print("orchestrator inheriting PYFORGE_* env (intentional, see module docstring):")
+        print("orchestrator inheriting QUORIN_* env (intentional, see module docstring):")
         for k in sorted(relevant):
             print(f"  {k}={relevant[k]}")
     else:
-        print("orchestrator: no PYFORGE_* env vars set in parent")
+        print("orchestrator: no QUORIN_* env vars set in parent")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     # value beyond what pytest-benchmark's stderr already shows on failure.
     runs: list[dict[str, float]] = []
     t0 = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="pyforge_repeat_") as tmp_dir_str:
+    with tempfile.TemporaryDirectory(prefix="quorin_repeat_") as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
         for i in range(args.num_runs):
             run_id = f"{i:03d}"

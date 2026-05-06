@@ -50,17 +50,17 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge._internal.pydantic_factory import (  # noqa: E402
+from quorin._internal.pydantic_factory import (  # noqa: E402
     clear_cache,
     field_order_for,
     pydantic_model_for,
 )
-from pyforge._internal.row_pack import (  # noqa: E402
+from quorin._internal.row_pack import (  # noqa: E402
     clear_cache as clear_row_pack_cache,
 )
-from pyforge.layout import insert as layout_insert  # noqa: E402
-from pyforge.schema import DType, FeatureField, FeatureSchema, row_size  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
+from quorin.layout import insert as layout_insert  # noqa: E402
+from quorin.schema import DType, FeatureField, FeatureSchema, row_size  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
 
 _RNG = np.random.default_rng(20260429)
 
@@ -130,7 +130,7 @@ def test_producer_to_consumer_roundtrip(fields: list[FeatureField]) -> None:
     blob = msgpack.packb(values_list, use_bin_type=True)
 
     # --- Consumer side ---------------------------------------------------
-    from pyforge._internal.row_pack import pack_row_from_list
+    from quorin._internal.row_pack import pack_row_from_list
 
     decoded = msgpack.unpackb(blob, use_list=True, raw=False)
     seg = make_segment(schema, capacity=4)
@@ -176,7 +176,7 @@ def test_last_write_wins_per_entity(fields: list[FeatureField], n_writes: int) -
     model_cls = pydantic_model_for(schema)
     order = field_order_for(schema)
 
-    from pyforge._internal.row_pack import pack_row_from_list
+    from quorin._internal.row_pack import pack_row_from_list
 
     seg = make_segment(schema, capacity=4)
     try:

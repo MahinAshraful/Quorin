@@ -1,4 +1,4 @@
-"""Hypothesis-driven property tests for pyforge.layout.
+"""Hypothesis-driven property tests for quorin.layout.
 
 Generates random valid entity-ID sets, inserts them, and asserts the spec
 invariants hold for every generated case — the kind of edge-case coverage
@@ -22,9 +22,9 @@ pytestmark = pytest.mark.skipif(
     reason="layout requires POSIX (Linux/WSL2)",
 )
 
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge._internal.crc import crc32_of_bytes  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin._internal.crc import crc32_of_bytes  # noqa: E402
+from quorin.layout import (  # noqa: E402
     OCCUPIED,
     _slot_table_view,
     compute_layout,
@@ -33,13 +33,13 @@ from pyforge.layout import (  # noqa: E402
     iterate_occupied,
     lookup,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     compile_schema,
     dtype,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
 
 
 class _Schema(FeatureSchema):
@@ -48,7 +48,7 @@ class _Schema(FeatureSchema):
 
 
 def _unique_name() -> str:
-    return f"pyforge_proptest_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    return f"quorin_proptest_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
 def _make_segment(capacity: int) -> Segment:

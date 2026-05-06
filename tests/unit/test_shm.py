@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.shm.
+"""Unit tests for quorin.shm.
 
 Uses a real Redis (the ``redis_client`` fixture) rather than a mock because
 the close-Lua script needs to execute server-side. These tests still run as
@@ -21,14 +21,14 @@ pytestmark = pytest.mark.skipif(
     reason="shm requires POSIX (Linux/WSL2)",
 )
 
-from pyforge._internal.crc import crc32_of_bytes  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin._internal.crc import crc32_of_bytes  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     compile_schema,
     dtype,
 )
-from pyforge.shm import (  # noqa: E402
+from quorin.shm import (  # noqa: E402
     HEADER_FMT,
     HEADER_LEN,
     KEY_CLEANUP_QUEUE,
@@ -111,7 +111,7 @@ def test_create_sets_expected_redis_keys(redis_client) -> None:
 
 
 def test_create_handle_size_matches_total_segment_size(redis_client) -> None:
-    from pyforge.layout import total_segment_size
+    from quorin.layout import total_segment_size
 
     reg = SegmentRegistry(redis_client)
     seg = reg.create(_TinySchema, capacity=32)
@@ -259,7 +259,7 @@ def test_segment_is_a_dataclass_with_name_schema_handle() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Step 14: pyforge:segment_to_schema sidetable + close-Lua extension
+# Step 14: quorin:segment_to_schema sidetable + close-Lua extension
 # ---------------------------------------------------------------------------
 
 
@@ -282,7 +282,7 @@ def test_create_writes_sidetable(redis_client) -> None:
 
 def test_close_lua_clears_schema_current_at_refcount_zero(redis_client) -> None:
     """Step 14 close-Lua extension: when the closing process is the last
-    holder (refcount-0), ``pyforge:schema:{name}:current`` AND the
+    holder (refcount-0), ``quorin:schema:{name}:current`` AND the
     sidetable field are cleared atomically. Symmetric with the watchdog
     dead-PID Lua.
     """
@@ -345,7 +345,7 @@ def test_close_lua_rotation_safety_skips_current_when_pointer_advanced(
 
 def test_create_segment_to_schema_uses_safe_class_name(redis_client) -> None:
     """Sidetable values store the safe-class-name form so they can be
-    string-concatenated into ``pyforge:schema:{value}:current`` keys
+    string-concatenated into ``quorin:schema:{value}:current`` keys
     by the watchdog Lua without further escaping.
     """
     reg = SegmentRegistry(redis_client)

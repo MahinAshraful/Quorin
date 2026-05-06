@@ -3,13 +3,31 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pyforge"
+name = "quorin"
 version = "0.1.0"
 description = "Low-latency ML feature serving via shared memory."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "Mahin Ashraful" }]
+authors = [{ name = "Mahin Ashraful", email = "mahinashraful08@gmail.com" }]
+keywords = [
+  "machine-learning",
+  "feature-store",
+  "feature-serving",
+  "shared-memory",
+  "low-latency",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries",
+]
+
 dependencies = [
   "numpy>=1.26,<2.0",
   "numba>=0.59,<0.61",
@@ -20,7 +38,7 @@ dependencies = [
   "structlog>=24.0",
   "prometheus-client>=0.19",
   "msgpack>=1.0,<2.0",
-  # POSIX IPC — used by pyforge._internal.posix_shm to bypass CPython's
+  # POSIX IPC — used by quorin._internal.posix_shm to bypass CPython's
   # multiprocessing.shared_memory resource_tracker bug. Linux/macOS only;
   # native Windows is not a supported platform per the spec.
   "posix-ipc>=1.1,<2.0; sys_platform != 'win32'",
@@ -39,8 +57,15 @@ dev = [
   "pre-commit>=3.7",
 ]
 
+[project.urls]
+Homepage      = "https://github.com/MahinAshraful/Quorin"
+Documentation = "https://github.com/MahinAshraful/Quorin#readme"
+Repository    = "https://github.com/MahinAshraful/Quorin.git"
+Issues        = "https://github.com/MahinAshraful/Quorin/issues"
+Changelog     = "https://github.com/MahinAshraful/Quorin/blob/main/CHANGELOG.md"
+
 [tool.hatch.build.targets.wheel]
-packages = ["pyforge"]
+packages = ["quorin"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -59,7 +84,7 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["pyforge"]
+source = ["quorin"]
 branch = true
 
 [tool.coverage.report]

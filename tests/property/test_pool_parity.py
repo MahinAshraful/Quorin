@@ -36,12 +36,12 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge.assembly import assemble as assemble_numba  # noqa: E402
-from pyforge.assembly import prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.pool import BufferPool  # noqa: E402
-from pyforge.schema import FeatureField, total_element_count  # noqa: E402
-from pyforge.serving import assemble as assemble_python  # noqa: E402
+from quorin.assembly import assemble as assemble_numba  # noqa: E402
+from quorin.assembly import prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.pool import BufferPool  # noqa: E402
+from quorin.schema import FeatureField, total_element_count  # noqa: E402
+from quorin.serving import assemble as assemble_python  # noqa: E402
 
 _HYPO = settings(
     max_examples=200,

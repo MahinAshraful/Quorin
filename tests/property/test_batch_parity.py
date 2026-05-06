@@ -1,4 +1,4 @@
-"""Parity tests: pyforge.assembly.assemble_batch vs N-loops of serving.assemble.
+"""Parity tests: quorin.assembly.assemble_batch vs N-loops of serving.assemble.
 
 THE Step 8 test. Hypothesis-driven over random schemas + random batches with
 NaN-poisoned output buffers. The batch kernel's per-row output must be
@@ -28,10 +28,10 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge.assembly import assemble_batch, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, total_element_count  # noqa: E402
-from pyforge.serving import assemble as assemble_python  # noqa: E402
+from quorin.assembly import assemble_batch, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, total_element_count  # noqa: E402
+from quorin.serving import assemble as assemble_python  # noqa: E402
 
 _HYPO = settings(
     max_examples=200,

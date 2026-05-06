@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from prometheus_client import generate_latest
 
-import pyforge
-from pyforge import (
+import quorin
+from quorin import (
     assembly,  # imported to prove the stub exists
     evolution,
     layout,
@@ -17,37 +17,37 @@ from pyforge import (
     wal,
     watchdog,
 )
-from pyforge import logging as pyforge_logging
+from quorin import logging as quorin_logging
 
 
 def test_package_version_is_defined() -> None:
-    assert pyforge.__version__ == "0.1.0"
+    assert quorin.__version__ == "0.1.0"
 
 
 def test_metrics_registry_has_expected_series() -> None:
     text = generate_latest(metrics.registry).decode()
-    assert "pyforge_read_latency_seconds" in text
-    assert "pyforge_gc_pause_seconds" in text
-    assert "pyforge_wal_lag_seconds" in text
-    assert "pyforge_pool_miss_total" in text
+    assert "quorin_read_latency_seconds" in text
+    assert "quorin_gc_pause_seconds" in text
+    assert "quorin_wal_lag_seconds" in text
+    assert "quorin_pool_miss_total" in text
 
 
 def test_counter_increments_without_http_server() -> None:
     metrics.pool_miss_total.labels(schema="smoke").inc()
     text = generate_latest(metrics.registry).decode()
-    assert 'pyforge_pool_miss_total{schema="smoke"}' in text
+    assert 'quorin_pool_miss_total{schema="smoke"}' in text
 
 
 def test_histogram_observes() -> None:
     metrics.read_latency_seconds.labels(schema="smoke", path="shm").observe(5e-6)
     text = generate_latest(metrics.registry).decode()
-    assert 'pyforge_read_latency_seconds_bucket{le="5e-06",path="shm",schema="smoke"}' in text
+    assert 'quorin_read_latency_seconds_bucket{le="5e-06",path="shm",schema="smoke"}' in text
 
 
 def test_logging_configures_idempotently() -> None:
-    pyforge_logging.configure()
-    pyforge_logging.configure()  # second call must not raise
-    log = pyforge_logging.get_logger("smoke")
+    quorin_logging.configure()
+    quorin_logging.configure()  # second call must not raise
+    log = quorin_logging.get_logger("smoke")
     log.info("step0_smoke", check=True)
 
 

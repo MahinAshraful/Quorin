@@ -46,9 +46,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.assembly import assemble, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.assembly import assemble, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-scope autouse prewarm — runs ONCE per pytest module, BEFORE any

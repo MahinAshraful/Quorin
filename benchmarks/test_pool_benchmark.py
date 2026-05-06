@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.pool.BufferPool.
+"""Benchmarks for quorin.pool.BufferPool.
 
 Three goals:
 
@@ -26,12 +26,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.assembly import assemble as assemble_numba  # noqa: E402
-from pyforge.assembly import prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.pool import BufferPool  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import assemble as assemble_python  # noqa: E402
+from quorin.assembly import assemble as assemble_numba  # noqa: E402
+from quorin.assembly import prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.pool import BufferPool  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import assemble as assemble_python  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)

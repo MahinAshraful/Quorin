@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.wal.WALProducer.
+"""Benchmarks for quorin.wal.WALProducer.
 
 Decomposed so a regression in any sub-component shows up in isolation:
 
@@ -39,9 +39,9 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
-from pyforge._internal.pydantic_factory import field_order_for, pydantic_model_for  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.wal import PROCESSED_KEY_PREFIX, WALProducer  # noqa: E402
+from quorin._internal.pydantic_factory import field_order_for, pydantic_model_for  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.wal import PROCESSED_KEY_PREFIX, WALProducer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas — 50-field and 200-field-with-128-emb match the spec's headline
@@ -143,7 +143,7 @@ def test_bench_write_50_field(benchmark, redis_client) -> None:
     + ``test_bench_write_sync_50_field`` (ADR-006 / ADR-008 archive comparators).
     """
     schema = _make_50_field_schema()
-    p = WALProducer(redis_client, stream_key=b"pyforge:wal:bench")
+    p = WALProducer(redis_client, stream_key=b"quorin:wal:bench")
     values = _values_for(schema)
     benchmark.group = "wal_write"
     benchmark.pedantic(
@@ -161,7 +161,7 @@ def test_bench_write_200_field(benchmark, redis_client) -> None:
     test_bench_write_50_field above for the pedantic-mode rationale.
     """
     schema = _make_200_field_schema()
-    p = WALProducer(redis_client, stream_key=b"pyforge:wal:bench")
+    p = WALProducer(redis_client, stream_key=b"quorin:wal:bench")
     values = _values_for(schema)
     benchmark.group = "wal_write"
     benchmark.pedantic(
@@ -185,7 +185,7 @@ def test_bench_xadd_only(benchmark, redis_client) -> None:
     }
     benchmark.group = "wal_write"
     benchmark(
-        redis_client.xadd, b"pyforge:wal:xadd_only", fields, maxlen=1_000_000, approximate=True
+        redis_client.xadd, b"quorin:wal:xadd_only", fields, maxlen=1_000_000, approximate=True
     )
 
 
@@ -197,7 +197,7 @@ def test_bench_xadd_only(benchmark, redis_client) -> None:
 @pytest.mark.integration
 def test_bench_write_sync_50_field(benchmark, redis_client) -> None:
     schema = _make_50_field_schema()
-    bench_stream = b"pyforge:wal:bench:write_sync"
+    bench_stream = b"quorin:wal:bench:write_sync"
     p = WALProducer(redis_client, stream_key=bench_stream)
     values = _values_for(schema)
 

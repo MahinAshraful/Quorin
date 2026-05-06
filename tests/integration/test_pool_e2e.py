@@ -26,14 +26,14 @@ pytestmark = [
 ]
 
 from _helpers import pack_row  # noqa: E402
-from pyforge.assembly import assemble as assemble_numba  # noqa: E402
-from pyforge.assembly import prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.metrics import pool_miss_total  # noqa: E402
-from pyforge.pool import BufferPool  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import assemble as assemble_python  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
+from quorin.assembly import assemble as assemble_numba  # noqa: E402
+from quorin.assembly import prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.metrics import pool_miss_total  # noqa: E402
+from quorin.pool import BufferPool  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import assemble as assemble_python  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)

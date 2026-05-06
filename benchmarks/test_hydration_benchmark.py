@@ -1,14 +1,14 @@
-"""Benchmarks for pyforge.hydration.hydrate (Step 13).
+"""Benchmarks for quorin.hydration.hydrate (Step 13).
 
 Four benches:
 
 * ``test_hydrate_10k_50_field_smoke`` — always-on (no env gate).
   Catches order-of-magnitude regressions; finer detection requires
-  PYFORGE_RUN_LARGE_BENCH=1 on the larger scales.
-* ``test_hydrate_100k_50_field`` — env-gated (PYFORGE_RUN_LARGE_BENCH=1).
-* ``test_hydrate_1m_200_field`` — env-gated (PYFORGE_RUN_LARGE_BENCH=1).
+  QUORIN_RUN_LARGE_BENCH=1 on the larger scales.
+* ``test_hydrate_100k_50_field`` — env-gated (QUORIN_RUN_LARGE_BENCH=1).
+* ``test_hydrate_1m_200_field`` — env-gated (QUORIN_RUN_LARGE_BENCH=1).
 * ``test_hydrate_10m_200_field_record`` — env-gated
-  (PYFORGE_RUN_RECORD_BENCH=1). Capacity-planning only; no committed gate.
+  (QUORIN_RUN_RECORD_BENCH=1). Capacity-planning only; no committed gate.
 
 Datasets generated in session-scoped fixtures. Generation is the
 dominant cost for the larger scales (~30-90s for 100k, ~10 min for
@@ -54,15 +54,15 @@ import numpy as np  # noqa: E402
 # same pattern, same wire-order encoding logic.
 from _watchdog_helpers import drain_cleanup_queue  # noqa: E402
 
-from pyforge.hydration import hydrate  # noqa: E402
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.hydration import hydrate  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
     dtype,
 )
-from pyforge.shm import SegmentNotFoundError, SegmentRegistry, _key_current  # noqa: E402
+from quorin.shm import SegmentNotFoundError, SegmentRegistry, _key_current  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas — top-level so subprocess fixtures (if any) can pickle them.
@@ -247,7 +247,7 @@ def _make_hydrate_runner(
     def _do_hydrate() -> int:
         # Drop any prior segment from a previous round.
         # NOTE: registry.close removes refcount + pid_segments + queues for
-        # cleanup_queue, but does NOT delete pyforge:schema:{name}:current
+        # cleanup_queue, but does NOT delete quorin:schema:{name}:current
         # (production-side, the next registry.create overwrites it). For
         # repeated hydrate calls in a bench loop, we must DEL it manually
         # or precondition #1 trips on round 2+.
@@ -277,7 +277,7 @@ def test_hydrate_10k_50_field_smoke(
     """Always-on smoke. Catches order-of-magnitude regressions only.
 
     Native target ~50-200ms; gate at 1s (5-20x upper bound). Finer
-    regression detection requires PYFORGE_RUN_LARGE_BENCH=1.
+    regression detection requires QUORIN_RUN_LARGE_BENCH=1.
     """
     base, schema = _hydrate_dataset_10k_50_smoke
     store = ParquetDatasetStore(base)
@@ -301,15 +301,15 @@ def test_hydrate_10k_50_field_smoke(
 
 
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
-    reason="Set PYFORGE_RUN_LARGE_BENCH=1 to run the 100k bench (~30-90s generation)",
+    os.environ.get("QUORIN_RUN_LARGE_BENCH") != "1",
+    reason="Set QUORIN_RUN_LARGE_BENCH=1 to run the 100k bench (~30-90s generation)",
 )
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_SHM_BENCH") != "1",
+    os.environ.get("QUORIN_RUN_LARGE_SHM_BENCH") != "1",
     reason=(
         "needs cumulative /dev/shm headroom (~1 GB peak + prior bench accumulation). "
         "ubuntu-latest cannot host on schedule (ADR-015 §7). Set "
-        "PYFORGE_RUN_LARGE_SHM_BENCH=1 on operator hosts or workflow_dispatch "
+        "QUORIN_RUN_LARGE_SHM_BENCH=1 on operator hosts or workflow_dispatch "
         "with `-f run_large_shm_bench=true`."
     ),
 )
@@ -349,14 +349,14 @@ def test_hydrate_100k_50_field(
 
 
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_BENCH") != "1",
-    reason="Set PYFORGE_RUN_LARGE_BENCH=1 to run the 1M bench (~10 min generation)",
+    os.environ.get("QUORIN_RUN_LARGE_BENCH") != "1",
+    reason="Set QUORIN_RUN_LARGE_BENCH=1 to run the 1M bench (~10 min generation)",
 )
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_LARGE_SHM_BENCH") != "1",
+    os.environ.get("QUORIN_RUN_LARGE_SHM_BENCH") != "1",
     reason=(
         "needs ~6 GB /dev/shm; ubuntu-latest cannot host (ADR-015 §7). "
-        "Set PYFORGE_RUN_LARGE_SHM_BENCH=1 on operator hosts or "
+        "Set QUORIN_RUN_LARGE_SHM_BENCH=1 on operator hosts or "
         "workflow_dispatch with `-f run_large_shm_bench=true`."
     ),
 )
@@ -392,8 +392,8 @@ def test_hydrate_1m_200_field(
 
 
 @pytest.mark.skipif(
-    os.environ.get("PYFORGE_RUN_RECORD_BENCH") != "1",
-    reason="Set PYFORGE_RUN_RECORD_BENCH=1 to run the 10M record bench (~100 min generation)",
+    os.environ.get("QUORIN_RUN_RECORD_BENCH") != "1",
+    reason="Set QUORIN_RUN_RECORD_BENCH=1 to run the 10M record bench (~100 min generation)",
 )
 def test_hydrate_10m_200_field_record(
     benchmark: Any,

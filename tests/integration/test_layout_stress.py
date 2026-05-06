@@ -27,10 +27,10 @@ pytestmark = [
 
 import struct  # noqa: E402
 
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge._internal.crc import crc32_of_bytes  # noqa: E402
-from pyforge._internal.hash_id import hash_entity_id  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin._internal.crc import crc32_of_bytes  # noqa: E402
+from quorin._internal.hash_id import hash_entity_id  # noqa: E402
+from quorin.layout import (  # noqa: E402
     OCCUPIED,
     SLOT_DTYPE,
     _slot_table_view,
@@ -39,13 +39,13 @@ from pyforge.layout import (  # noqa: E402
     insert,
     lookup,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     compile_schema,
     dtype,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
 
 
 class _SmallSchema(FeatureSchema):
@@ -54,7 +54,7 @@ class _SmallSchema(FeatureSchema):
 
 
 def _unique_name() -> str:
-    return f"pyforge_stress_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    return f"quorin_stress_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
 def _make_stress_segment(capacity: int) -> Segment:
@@ -155,7 +155,7 @@ def test_filling_to_capacity_is_idempotent_then_raises() -> None:
     """Insert exactly ``capacity`` entities — the last should still succeed.
     The next NEW insert raises CapacityExceeded; an UPDATE of an existing
     entity still succeeds."""
-    from pyforge.layout import CapacityExceededError
+    from quorin.layout import CapacityExceededError
 
     capacity = 200
     seg = _make_stress_segment(capacity)

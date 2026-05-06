@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.serving.assemble.
+"""Benchmarks for quorin.serving.assemble.
 
 These run the **pure-Python** oracle. Step 5's Numba kernel will produce
 byte-identical output and must beat these baselines (gated by the spec's
@@ -27,9 +27,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import EntityNotFoundError, assemble  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import EntityNotFoundError, assemble  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas covering the two headline scenarios from the spec.

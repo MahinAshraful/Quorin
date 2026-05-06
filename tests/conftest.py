@@ -2,7 +2,7 @@
 
 The ``redis_client`` fixture is a live client against a Redis instance
 (normally docker-compose'd at 127.0.0.1:6379). The ``_shm_test_isolation``
-autouse fixture scrubs any Pyforge artifacts left behind by each test so a
+autouse fixture scrubs any Quorin artifacts left behind by each test so a
 leak in one test does not cascade into the next.
 """
 
@@ -20,7 +20,7 @@ import redis
 
 def _redis_url() -> str:
     # WSL2 / Docker Desktop for Windows: always 127.0.0.1, never ``localhost``.
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 @pytest.fixture(scope="session")
@@ -40,11 +40,11 @@ def redis_client() -> Iterator[redis.Redis]:
 
 @pytest.fixture(autouse=True)
 def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup steps
-    """Scrub Pyforge artifacts after every test.
+    """Scrub Quorin artifacts after every test.
 
     Runs post-test to:
-      * Unlink any ``pyforge_*`` entries left in ``/dev/shm``.
-      * Delete any ``pyforge:*`` keys from Redis (best-effort; silently skipped
+      * Unlink any ``quorin_*`` entries left in ``/dev/shm``.
+      * Delete any ``quorin:*`` keys from Redis (best-effort; silently skipped
         if Redis isn't reachable).
 
     This is belt-and-suspenders — tests should clean up after themselves, but
@@ -56,12 +56,12 @@ def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup s
     shm_dir = Path("/dev/shm")
     if shm_dir.is_dir() and sys.platform != "win32":
         try:
-            from pyforge._internal import posix_shm
+            from quorin._internal import posix_shm
         except ImportError:
             posix_shm = None  # type: ignore[assignment]
         if posix_shm is not None:
             for entry in shm_dir.iterdir():
-                if entry.name.startswith("pyforge_"):
+                if entry.name.startswith("quorin_"):
                     try:
                         posix_shm.unlink(entry.name)
                     except Exception:
@@ -81,7 +81,7 @@ def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup s
         return
 
     try:
-        keys = list(client.scan_iter(match="pyforge:*", count=1000))
+        keys = list(client.scan_iter(match="quorin:*", count=1000))
         if keys:
             client.delete(*keys)
     finally:
@@ -92,7 +92,7 @@ def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup s
     # the next test starts on clean ground. Wrapped in suppress() so a
     # broken cleanup never breaks a passing test report.
     try:
-        from pyforge._internal import gc_manager
+        from quorin._internal import gc_manager
     except ImportError:
         gc_manager = None  # type: ignore[assignment]
     if gc_manager is not None:
@@ -105,11 +105,11 @@ def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup s
     # SegmentRegistry.create / open_current call heartbeat.ensure_started,
     # which spawns a daemon thread. The thread is harmless (daemons don't
     # block process exit) but stop()ing between tests means the next test
-    # starts with a known-empty pyforge:heartbeats hash AND a clean
+    # starts with a known-empty quorin:heartbeats hash AND a clean
     # _state slate (so test_heartbeat.py's assertions about state-after-
     # ensure_started aren't polluted by a prior test).
     try:
-        from pyforge._internal import heartbeat
+        from quorin._internal import heartbeat
     except ImportError:
         heartbeat = None  # type: ignore[assignment]
     if heartbeat is not None:
@@ -124,6 +124,6 @@ def _shm_test_isolation() -> Iterator[None]:  # noqa: PLR0912 - linear cleanup s
     # missing import (e.g. pyarrow not installed in some future stripped
     # CI image) never breaks a passing test report.
     with contextlib.suppress(Exception):
-        from pyforge._internal import arrow_schema
+        from quorin._internal import arrow_schema
 
         arrow_schema.clear_cache()

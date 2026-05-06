@@ -1,4 +1,4 @@
-"""Hypothesis-driven property tests for pyforge.serving.assemble.
+"""Hypothesis-driven property tests for quorin.serving.assemble.
 
 Generates random schemas + random row payloads. Properties cover the
 declaration-order contract, output length, exactness for float32-only
@@ -30,9 +30,9 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import DType, FeatureField  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import DType, FeatureField  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
 
 _HYPO = settings(
     max_examples=150,

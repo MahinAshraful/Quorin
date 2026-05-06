@@ -46,7 +46,7 @@ def _stub_registry() -> object:
     from typing import cast as _cast
     from unittest.mock import Mock as _Mock
 
-    from pyforge.shm import SegmentRegistry
+    from quorin.shm import SegmentRegistry
 
     return _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
 
@@ -69,11 +69,11 @@ def _kill_after_n_apply_subprocess(
 
     import redis.asyncio
 
-    from pyforge import layout  # noqa: F401  (ensures import side-effects)
-    from pyforge._internal import posix_shm
-    from pyforge.layout import compute_layout_from_segment
-    from pyforge.shm import HEADER_LEN, Segment
-    from pyforge.wal_consumer import WALConsumer
+    from quorin import layout  # noqa: F401  (ensures import side-effects)
+    from quorin._internal import posix_shm
+    from quorin.layout import compute_layout_from_segment
+    from quorin.shm import HEADER_LEN, Segment
+    from quorin.wal_consumer import WALConsumer
 
     # Resolve schema.
     mod_name, _, cls_name = schema_dotted.rpartition(".")
@@ -86,7 +86,7 @@ def _kill_after_n_apply_subprocess(
     del HEADER_LEN  # silence import-only warning
 
     async def main() -> None:
-        from pyforge.shm import SegmentRegistry
+        from quorin.shm import SegmentRegistry
 
         _stub_reg = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
         client = redis.asyncio.Redis.from_url(redis_url, decode_responses=False)
@@ -116,7 +116,7 @@ def _kill_after_n_apply_subprocess(
 # ---------------------------------------------------------------------------
 
 
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 
 class _ChaosCS(FeatureSchema):
@@ -134,7 +134,7 @@ class _ChaosCS(FeatureSchema):
 
 @pytest.fixture
 def chaos_redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +149,14 @@ def _run_one_chaos_iteration(redis_url: str, kill_after_n: int) -> None:
     import redis.asyncio
 
     from _helpers import make_segment, release_segment
-    from pyforge.layout import lookup
-    from pyforge.wal import WALProducer
-    from pyforge.wal_consumer import WALConsumer
+    from quorin.layout import lookup
+    from quorin.wal import WALProducer
+    from quorin.wal_consumer import WALConsumer
 
     # Fresh stream + group + segment for each iteration.
     client = sync_redis.Redis.from_url(redis_url, decode_responses=False)
     # Scrub previous-iteration leftovers.
-    for k in client.scan_iter(match="pyforge:*", count=1000):
+    for k in client.scan_iter(match="quorin:*", count=1000):
         client.delete(k)
 
     seg = make_segment(_ChaosCS, capacity=128)
@@ -189,7 +189,7 @@ def _run_one_chaos_iteration(redis_url: str, kill_after_n: int) -> None:
 
         # Lock cleanup — subprocess died holding it; clear so the recovery
         # consumer can start.
-        for k in client.scan_iter(match="pyforge:consumer:lock:*", count=100):
+        for k in client.scan_iter(match="quorin:consumer:lock:*", count=100):
             client.delete(k)
 
         # Recovery consumer in parent: drain remaining PEL + new msgs (none).
@@ -210,7 +210,7 @@ def _run_one_chaos_iteration(redis_url: str, kill_after_n: int) -> None:
                 deadline = time.monotonic() + 10.0
                 while time.monotonic() < deadline:
                     try:
-                        info = await ar.xpending("pyforge:wal", "pyforge_consumers")
+                        info = await ar.xpending("quorin:wal", "quorin_consumers")
                         if info["pending"] == 0:
                             break
                     except Exception:
@@ -228,7 +228,7 @@ def _run_one_chaos_iteration(redis_url: str, kill_after_n: int) -> None:
             assert lookup(seg, f"e-{i}") is not None, (
                 f"entity e-{i} missing after kill_after_n={kill_after_n}"
             )
-        info = client.xpending("pyforge:wal", "pyforge_consumers")
+        info = client.xpending("quorin:wal", "quorin_consumers")
         assert info["pending"] == 0, f"PEL not drained after recovery: {info['pending']} remain"
 
     finally:

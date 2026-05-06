@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.gc_manager.
+"""Unit tests for quorin._internal.gc_manager.
 
 Manager itself is platform-agnostic (only stdlib gc / threading / os hooks).
 No POSIX gate. The integration-flavored "collector running while assemble
@@ -19,8 +19,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyforge._internal import gc_manager
-from pyforge._internal.gc_manager import (
+from quorin._internal import gc_manager
+from quorin._internal.gc_manager import (
     _gc_callback,
     _observers,
     _pause_starts,
@@ -32,7 +32,7 @@ from pyforge._internal.gc_manager import (
     stop_collector,
     unfreeze,
 )
-from pyforge.metrics import gc_pause_seconds
+from quorin.metrics import gc_pause_seconds
 
 
 @pytest.fixture(autouse=True)

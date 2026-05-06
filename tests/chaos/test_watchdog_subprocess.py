@@ -1,6 +1,6 @@
 """Chaos tests for the Step 14 watchdog running as a real subprocess.
 
-Spawns ``python -m pyforge.watchdog`` and a worker subprocess, exercises:
+Spawns ``python -m quorin.watchdog`` and a worker subprocess, exercises:
 
 * C1 — SIGKILL convergence: kill the worker, the watchdog cleans up
   ``/dev/shm`` and Redis state within the detection ceiling.
@@ -70,9 +70,9 @@ import time
 
 import redis
 
-from pyforge._internal import heartbeat
-from pyforge.schema import FeatureField, FeatureSchema, dtype
-from pyforge.shm import SegmentRegistry
+from quorin._internal import heartbeat
+from quorin.schema import FeatureField, FeatureSchema, dtype
+from quorin.shm import SegmentRegistry
 
 
 class _ChaosSchema(FeatureSchema):
@@ -95,7 +95,7 @@ elif mode == "open":
     import time as _t
     deadline = _t.time() + 5.0
     while _t.time() < deadline:
-        if client.get("pyforge:schema:_ChaosSchema:current") is not None:
+        if client.get("quorin:schema:_ChaosSchema:current") is not None:
             break
         _t.sleep(0.05)
     seg = reg.open_current(_ChaosSchema)
@@ -121,17 +121,17 @@ while True:
 
 @pytest.fixture
 def redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 @pytest.fixture
 def watchdog_proc(redis_url: str) -> Iterator[subprocess.Popen[bytes]]:
-    """Spawn a real ``python -m pyforge.watchdog`` subprocess at fast cadence."""
+    """Spawn a real ``python -m quorin.watchdog`` subprocess at fast cadence."""
     proc = subprocess.Popen(
         [
             sys.executable,
             "-m",
-            "pyforge.watchdog",
+            "quorin.watchdog",
             "--redis",
             redis_url,
             "--tick-interval-seconds",
@@ -190,11 +190,11 @@ def _poll_until_clean(
     """Returns True if all the dead-PID's state is gone within deadline."""
     deadline = time.monotonic() + deadline_seconds
     while time.monotonic() < deadline:
-        refcount_gone = not redis_client.exists(f"pyforge:refcount:{seg_name}")
-        current_gone = not redis_client.exists(f"pyforge:schema:{schema_name}:current")
-        sidetable_gone = not redis_client.hexists("pyforge:segment_to_schema", seg_name)
-        pid_segs_gone = not redis_client.exists(f"pyforge:pid_segments:{pid}")
-        heartbeat_gone = not redis_client.hexists("pyforge:heartbeats", str(pid))
+        refcount_gone = not redis_client.exists(f"quorin:refcount:{seg_name}")
+        current_gone = not redis_client.exists(f"quorin:schema:{schema_name}:current")
+        sidetable_gone = not redis_client.hexists("quorin:segment_to_schema", seg_name)
+        pid_segs_gone = not redis_client.exists(f"quorin:pid_segments:{pid}")
+        heartbeat_gone = not redis_client.hexists("quorin:heartbeats", str(pid))
         shm_gone = not Path(f"/dev/shm/{seg_name}").exists()
         if (
             refcount_gone
@@ -214,8 +214,8 @@ def _poll_until_clean(
 # ---------------------------------------------------------------------------
 
 # Run 10 seeds by default (covers flake without dominating chaos suite
-# runtime); set PYFORGE_FULL_CHAOS=1 to expand to 50 for nightly CI.
-_C1_SEEDS = list(range(50)) if os.environ.get("PYFORGE_FULL_CHAOS") else list(range(10))
+# runtime); set QUORIN_FULL_CHAOS=1 to expand to 50 for nightly CI.
+_C1_SEEDS = list(range(50)) if os.environ.get("QUORIN_FULL_CHAOS") else list(range(10))
 
 
 @pytest.mark.parametrize("seed", _C1_SEEDS)
@@ -238,7 +238,7 @@ def test_c1_sigkill_convergence(
 
         # Confirm Redis state populated.
         deadline = time.monotonic() + 2.0
-        while not redis_client.hexists("pyforge:heartbeats", str(worker_pid)):
+        while not redis_client.hexists("quorin:heartbeats", str(worker_pid)):
             if time.monotonic() > deadline:
                 pytest.fail("worker heartbeat never appeared")
             time.sleep(0.05)
@@ -287,7 +287,7 @@ def test_c2_second_reader_keeps_segment_alive(
 
         deadline = time.monotonic() + 3.0
         while True:
-            raw = redis_client.get(f"pyforge:refcount:{seg_name}")
+            raw = redis_client.get(f"quorin:refcount:{seg_name}")
             if raw is not None and int(raw) == 2:
                 break
             if time.monotonic() > deadline:
@@ -304,9 +304,9 @@ def test_c2_second_reader_keeps_segment_alive(
         deadline = time.monotonic() + CONVERGENCE_TIMEOUT
         a_cleaned = False
         while time.monotonic() < deadline:
-            pid_segs_a_gone = not redis_client.exists(f"pyforge:pid_segments:{pid_a}")
-            heartbeat_a_gone = not redis_client.hexists("pyforge:heartbeats", str(pid_a))
-            refcount_raw = redis_client.get(f"pyforge:refcount:{seg_name}")
+            pid_segs_a_gone = not redis_client.exists(f"quorin:pid_segments:{pid_a}")
+            heartbeat_a_gone = not redis_client.hexists("quorin:heartbeats", str(pid_a))
+            refcount_raw = redis_client.get(f"quorin:refcount:{seg_name}")
             refcount = int(refcount_raw) if refcount_raw is not None else 0
             if pid_segs_a_gone and heartbeat_a_gone and refcount == 1:
                 a_cleaned = True
@@ -316,8 +316,8 @@ def test_c2_second_reader_keeps_segment_alive(
 
         # Segment still present in /dev/shm — B holds it.
         assert Path(f"/dev/shm/{seg_name}").exists()
-        assert redis_client.hexists("pyforge:segment_to_schema", seg_name) == 1
-        assert redis_client.exists("pyforge:schema:_ChaosSchema:current")
+        assert redis_client.hexists("quorin:segment_to_schema", seg_name) == 1
+        assert redis_client.exists("quorin:schema:_ChaosSchema:current")
 
         # Kill B with SIGTERM (SIGTERM doesn't trigger atexit either,
         # use a clean exit via SIGUSR1? Simpler: SIGKILL B too. Watchdog
@@ -368,7 +368,7 @@ def test_c3_sigstop_sigcont_does_not_declare_dead(
 
         # Wait for heartbeat to populate.
         deadline = time.monotonic() + 2.0
-        while not redis_client.hexists("pyforge:heartbeats", str(worker_pid)):
+        while not redis_client.hexists("quorin:heartbeats", str(worker_pid)):
             if time.monotonic() > deadline:
                 pytest.fail("worker heartbeat never appeared")
             time.sleep(0.05)
@@ -380,13 +380,13 @@ def test_c3_sigstop_sigcont_does_not_declare_dead(
         time.sleep(6.0)
 
         # Worker's segment + state must STILL be intact.
-        assert redis_client.exists(f"pyforge:refcount:{seg_name}"), (
+        assert redis_client.exists(f"quorin:refcount:{seg_name}"), (
             "watchdog incorrectly declared SIGSTOP'd worker dead — "
             "psutil cross-check should have caught it"
         )
         assert Path(f"/dev/shm/{seg_name}").exists()
         # Heartbeat hash entry stays (no HDEL fired).
-        assert redis_client.hexists("pyforge:heartbeats", str(worker_pid)) == 1
+        assert redis_client.hexists("quorin:heartbeats", str(worker_pid)) == 1
 
         # SIGCONT — worker resumes heartbeating.
         os.kill(worker_pid, signal.SIGCONT)

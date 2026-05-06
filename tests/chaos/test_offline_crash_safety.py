@@ -42,7 +42,7 @@ def _stub_registry() -> object:
     from typing import cast as _cast
     from unittest.mock import Mock as _Mock
 
-    from pyforge.shm import SegmentRegistry
+    from quorin.shm import SegmentRegistry
 
     return _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
 
@@ -62,13 +62,13 @@ def _kill_after_n_apply_with_offline_subprocess(
 
     import redis.asyncio
 
-    from pyforge._internal import posix_shm
-    from pyforge.layout import compute_layout_from_segment
-    from pyforge.offline import ParquetDatasetStore
-    from pyforge.shm import Segment, SegmentRegistry
+    from quorin._internal import posix_shm
+    from quorin.layout import compute_layout_from_segment
+    from quorin.offline import ParquetDatasetStore
+    from quorin.shm import Segment, SegmentRegistry
 
     _stub_registry_local = _cast("SegmentRegistry", _Mock(spec=SegmentRegistry))
-    from pyforge.wal_consumer import WALConsumer
+    from quorin.wal_consumer import WALConsumer
 
     mod_name, _, cls_name = schema_dotted.rpartition(".")
     schema = getattr(importlib.import_module(mod_name), cls_name)
@@ -110,7 +110,7 @@ def _kill_after_n_apply_with_offline_subprocess(
 # ---------------------------------------------------------------------------
 
 
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 
 class _ChaosOff(FeatureSchema):
@@ -128,7 +128,7 @@ class _ChaosOff(FeatureSchema):
 
 @pytest.fixture
 def chaos_redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 def _all_finals_readable(base: Path) -> tuple[int, int]:
@@ -155,12 +155,12 @@ def _run_one_offline_chaos_iteration(redis_url: str, base_path: Path, kill_after
     import redis.asyncio
 
     from _helpers import make_segment, release_segment
-    from pyforge.offline import ParquetDatasetStore
-    from pyforge.wal import WALProducer
-    from pyforge.wal_consumer import WALConsumer
+    from quorin.offline import ParquetDatasetStore
+    from quorin.wal import WALProducer
+    from quorin.wal_consumer import WALConsumer
 
     client = sync_redis.Redis.from_url(redis_url, decode_responses=False)
-    for k in client.scan_iter(match="pyforge:*", count=1000):
+    for k in client.scan_iter(match="quorin:*", count=1000):
         client.delete(k)
 
     seg = make_segment(_ChaosOff, capacity=128)
@@ -202,7 +202,7 @@ def _run_one_offline_chaos_iteration(redis_url: str, base_path: Path, kill_after
         assert leftover_in_tmp == [], f"_tmp/ still has files after fresh init: {leftover_in_tmp}"
 
         # Lock cleanup — subprocess died holding it.
-        for k in client.scan_iter(match="pyforge:consumer:lock:*", count=100):
+        for k in client.scan_iter(match="quorin:consumer:lock:*", count=100):
             client.delete(k)
 
         async def recover() -> None:
@@ -223,7 +223,7 @@ def _run_one_offline_chaos_iteration(redis_url: str, base_path: Path, kill_after
                 deadline = time.monotonic() + 12.0
                 while time.monotonic() < deadline:
                     try:
-                        info = await ar.xpending("pyforge:wal", "pyforge_consumers")
+                        info = await ar.xpending("quorin:wal", "quorin_consumers")
                         if info["pending"] == 0 and not c._pending_ack:
                             break
                     except Exception:
@@ -242,7 +242,7 @@ def _run_one_offline_chaos_iteration(redis_url: str, base_path: Path, kill_after
         _, total_rows = _all_finals_readable(base_path)
         assert total_rows >= n_msgs, f"recovery left only {total_rows}/{n_msgs} rows in finals"
         # PEL drained.
-        info = client.xpending("pyforge:wal", "pyforge_consumers")
+        info = client.xpending("quorin:wal", "quorin_consumers")
         assert info["pending"] == 0, f"PEL not drained after recovery: {info['pending']} remain"
 
     finally:

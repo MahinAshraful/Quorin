@@ -17,7 +17,7 @@ from benchmarks.flamegraphs._setup import (
     make_clobber_array,
     make_warm_segment,
 )
-from pyforge.assembly import assemble, prewarm
+from quorin.assembly import assemble, prewarm
 
 DURATION_SECONDS = 60.0
 

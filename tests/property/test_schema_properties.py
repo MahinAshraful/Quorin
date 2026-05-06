@@ -1,4 +1,4 @@
-"""Hypothesis-driven property tests for pyforge.schema.
+"""Hypothesis-driven property tests for quorin.schema.
 
 Each test generates random valid schemas (1-100 unique-named fields, random
 dtypes and shapes) and asserts an invariant that must hold for every possible
@@ -12,7 +12,7 @@ import string
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from pyforge.schema import (
+from quorin.schema import (
     CACHE_LINE_SIZE,
     HEADER_SIZE,
     DType,

@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.pool.BatchBufferPool (Step 8).
+"""Unit tests for quorin.pool.BatchBufferPool (Step 8).
 
 Pool itself is platform-agnostic — it constructs only NumPy arrays and a
 ``collections.deque``. No POSIX shared memory, no Redis, no segment
@@ -12,9 +12,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyforge.metrics import pool_miss_total
-from pyforge.pool import BatchBufferPool
-from pyforge.schema import FeatureField, FeatureSchema, dtype
+from quorin.metrics import pool_miss_total
+from quorin.pool import BatchBufferPool
+from quorin.schema import FeatureField, FeatureSchema, dtype
 
 
 class _OneScalar(FeatureSchema):

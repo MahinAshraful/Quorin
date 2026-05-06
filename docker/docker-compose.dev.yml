@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7.2-alpine
-    container_name: pyforge-redis
+    container_name: quorin-redis
     command: >-
       redis-server
       --appendonly yes
@@ -11,7 +11,7 @@ services:
     volumes: ["redis_data:/data"]
     # PLAN CORRECTION: Docker defaults /dev/shm to 64 MB inside the container.
     # Irrelevant for Redis but carried so the pattern is already in place when
-    # the pyforge test runner gets containerized (Step 16-ish).
+    # the quorin test runner gets containerized (Step 16-ish).
     shm_size: 2gb
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]

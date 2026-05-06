@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.pool.BufferPool.
+"""Unit tests for quorin.pool.BufferPool.
 
 Pool itself is platform-agnostic — it constructs only NumPy arrays and a
 ``collections.deque``. No POSIX shared memory, no Redis, no segment
@@ -17,9 +17,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyforge.metrics import pool_miss_total
-from pyforge.pool import BufferPool
-from pyforge.schema import FeatureField, FeatureSchema, dtype
+from quorin.metrics import pool_miss_total
+from quorin.pool import BufferPool
+from quorin.schema import FeatureField, FeatureSchema, dtype
 
 # ---------------------------------------------------------------------------
 # Schemas. Module-level so __init_subclass__ runs at import time.

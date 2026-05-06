@@ -18,8 +18,8 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from _helpers import build_dynamic_schema, field_list_strategy, random_value_for
-from pyforge._internal.pydantic_factory import clear_cache, field_order_for, pydantic_model_for
-from pyforge.schema import DType, FeatureField
+from quorin._internal.pydantic_factory import clear_cache, field_order_for, pydantic_model_for
+from quorin.schema import DType, FeatureField
 
 _RNG = np.random.default_rng(20260429)
 

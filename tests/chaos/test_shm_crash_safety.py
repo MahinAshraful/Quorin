@@ -27,7 +27,7 @@ pytestmark = [
 
 def _subprocess_writer_then_sigkill(name: str) -> None:
     """Open the segment, busy-write a pattern, SIGKILL self mid-write."""
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     h = posix_shm.open_existing(name)
     # Write many small patterns past the header.
@@ -44,9 +44,9 @@ def _mp_context() -> multiprocessing.context.BaseContext:
 def test_sigkill_during_writes_leaves_header_intact() -> None:
     """SIGKILL a writer subprocess. The 16-byte header (written by the
     creator before the subprocess was spawned) must still be intact."""
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
-    name = f"pyforge_chaos_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    name = f"quorin_chaos_{os.getpid()}_{uuid.uuid4().hex[:8]}"
     h = posix_shm.create(name, 8192)
     try:
         # Pretend creator already wrote a header.
@@ -70,10 +70,10 @@ def test_sigkill_during_writes_leaves_header_intact() -> None:
 @pytest.mark.slow
 def test_soak_create_close_cycle_returns_dev_shm_to_baseline(redis_client) -> None:
     """Run 200 create/close cycles and drain the cleanup queue. `/dev/shm`
-    byte usage for pyforge entries must return to baseline (zero)."""
-    from pyforge._internal import posix_shm
-    from pyforge.schema import FeatureField, FeatureSchema, dtype
-    from pyforge.shm import KEY_CLEANUP_QUEUE, SegmentRegistry
+    byte usage for quorin entries must return to baseline (zero)."""
+    from quorin._internal import posix_shm
+    from quorin.schema import FeatureField, FeatureSchema, dtype
+    from quorin.shm import KEY_CLEANUP_QUEUE, SegmentRegistry
 
     class _SoakSchema(FeatureSchema):
         version = 1
@@ -81,17 +81,17 @@ def test_soak_create_close_cycle_returns_dev_shm_to_baseline(redis_client) -> No
 
     shm_dir = Path("/dev/shm")
 
-    def _pyforge_usage() -> int:
+    def _quorin_usage() -> int:
         if not shm_dir.is_dir():
             return 0
         total = 0
         for entry in shm_dir.iterdir():
-            if entry.name.startswith("pyforge_"):
+            if entry.name.startswith("quorin_"):
                 with contextlib.suppress(FileNotFoundError):
                     total += entry.stat().st_size
         return total
 
-    baseline = _pyforge_usage()
+    baseline = _quorin_usage()
 
     reg = SegmentRegistry(redis_client)
     # Reduced from 1000 → 200 so the test runs in under 10s even on a slow
@@ -109,6 +109,6 @@ def test_soak_create_close_cycle_returns_dev_shm_to_baseline(redis_client) -> No
     if members:
         redis_client.delete(KEY_CLEANUP_QUEUE)
 
-    assert _pyforge_usage() == baseline, (
-        f"leak: /dev/shm pyforge usage went from {baseline} to {_pyforge_usage()}"
+    assert _quorin_usage() == baseline, (
+        f"leak: /dev/shm quorin usage went from {baseline} to {_quorin_usage()}"
     )

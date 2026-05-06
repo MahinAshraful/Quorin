@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.serving.assemble.
+"""Unit tests for quorin.serving.assemble.
 
 These tests are the contract Step 5's Numba kernel must reproduce byte-for-byte.
 ``TestDeclarationOrderPinned::test_known_schema_known_output`` is the pinned
@@ -19,8 +19,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
@@ -29,7 +29,7 @@ from pyforge.schema import (  # noqa: E402
     dtype,
     total_element_count,
 )
-from pyforge.serving import EntityNotFoundError, assemble  # noqa: E402
+from quorin.serving import EntityNotFoundError, assemble  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas used across tests. Defined at module scope so __init_subclass__ runs

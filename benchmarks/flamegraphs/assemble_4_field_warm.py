@@ -1,6 +1,6 @@
 """Flamegraph driver: warm-cache assemble of a 4-field schema.
 
-Tight loop calling pyforge.assembly.assemble. Run via:
+Tight loop calling quorin.assembly.assemble. Run via:
 
     py-spy record --native --rate 500 --duration 30 \\
       --output benchmarks/results/flamegraphs/assemble_4_field_warm.svg \\
@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from benchmarks.flamegraphs._setup import Schema4Field, make_warm_segment
-from pyforge.assembly import assemble, prewarm
+from quorin.assembly import assemble, prewarm
 
 DURATION_SECONDS = 60.0  # generous; py-spy's --duration usually wins first
 

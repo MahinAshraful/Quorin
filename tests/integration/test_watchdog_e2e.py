@@ -29,10 +29,10 @@ pytestmark = [
 ]
 
 
-from pyforge._internal import heartbeat  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import KEY_SEGMENT_TO_SCHEMA, SegmentRegistry, _key_current  # noqa: E402
-from pyforge.watchdog import WatchdogState  # noqa: E402
+from quorin._internal import heartbeat  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import KEY_SEGMENT_TO_SCHEMA, SegmentRegistry, _key_current  # noqa: E402
+from quorin.watchdog import WatchdogState  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -109,8 +109,8 @@ def _e2_child_target(redis_url: str, ready_path: str, schema_class: type[Feature
 
     import redis as _redis
 
-    from pyforge._internal import heartbeat as _heartbeat
-    from pyforge.shm import SegmentRegistry as _Registry
+    from quorin._internal import heartbeat as _heartbeat
+    from quorin.shm import SegmentRegistry as _Registry
 
     client = _redis.Redis.from_url(redis_url)
     reg = _Registry(client)
@@ -153,7 +153,7 @@ def test_e2_dead_pid_full_cleanup(
 
         # Confirm child's heartbeat is present.
         deadline = time.monotonic() + 2.0
-        while not redis_client.hexists("pyforge:heartbeats", str(child_pid)):
+        while not redis_client.hexists("quorin:heartbeats", str(child_pid)):
             if time.monotonic() > deadline:
                 pytest.fail("child's heartbeat never appeared in Redis")
             time.sleep(0.05)
@@ -179,11 +179,11 @@ def test_e2_dead_pid_full_cleanup(
         assert result.segments_unlinked_drain == 1
 
         # Redis state cleaned.
-        assert not redis_client.exists(f"pyforge:refcount:{seg_name}")
+        assert not redis_client.exists(f"quorin:refcount:{seg_name}")
         assert not redis_client.exists(_key_current(_WdSchema))
         assert not redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, seg_name)
-        assert not redis_client.exists(f"pyforge:pid_segments:{child_pid}")
-        assert not redis_client.hexists("pyforge:heartbeats", str(child_pid))
+        assert not redis_client.exists(f"quorin:pid_segments:{child_pid}")
+        assert not redis_client.hexists("quorin:heartbeats", str(child_pid))
 
         # /dev/shm cleaned. (posix_shm.unlink ran via the drain.)
         shm_path = Path(f"/dev/shm/{seg_name}")
@@ -231,7 +231,7 @@ def test_e4_close_lua_clears_schema_current_at_refcount_zero(
 
     assert redis_client.get(_key_current(_WdSchema)) is None
     assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name) == 0
-    assert redis_client.sismember("pyforge:cleanup_queue", name) == 1
+    assert redis_client.sismember("quorin:cleanup_queue", name) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -254,8 +254,8 @@ def test_e5_close_lua_rotation_safety(redis_client: redis.Redis, registry: Segme
         assert redis_client.get(_key_current(_WdSchema)) == seg2.name.encode()
         assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, seg1.name) == 0
         assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, seg2.name) == 1
-        assert redis_client.sismember("pyforge:cleanup_queue", seg1.name) == 1
-        assert redis_client.sismember("pyforge:cleanup_queue", seg2.name) == 0
+        assert redis_client.sismember("quorin:cleanup_queue", seg1.name) == 1
+        assert redis_client.sismember("quorin:cleanup_queue", seg2.name) == 0
     finally:
         registry.close(seg2)
 
@@ -272,7 +272,7 @@ def test_e6_force_drop_orphan_clears_schema_current_and_sidetable(
     schema:current AND the sidetable. The integration test uses real
     Redis to verify the pipeline transaction commits all four keys.
     """
-    from pyforge.hydration import _force_drop_orphan
+    from quorin.hydration import _force_drop_orphan
 
     seg = registry.create(_WdSchema, capacity=16)
     name = seg.name
@@ -284,6 +284,6 @@ def test_e6_force_drop_orphan_clears_schema_current_and_sidetable(
 
     assert redis_client.get(_key_current(_WdSchema)) is None
     assert redis_client.hexists(KEY_SEGMENT_TO_SCHEMA, name) == 0
-    assert not redis_client.exists(f"pyforge:refcount:{name}")
+    assert not redis_client.exists(f"quorin:refcount:{name}")
     # /dev/shm cleaned by _force_drop_orphan's direct unlink.
     assert not Path(f"/dev/shm/{name}").exists()

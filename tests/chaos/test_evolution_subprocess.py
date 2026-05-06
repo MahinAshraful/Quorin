@@ -31,11 +31,11 @@ import numpy as np  # noqa: E402
 import redis  # noqa: E402
 
 import _helpers as h  # noqa: E402
-from pyforge import layout  # noqa: E402
-from pyforge.evolution import upgrade_schema  # noqa: E402
-from pyforge.schema import DType, FeatureField, FeatureSchema  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
-from pyforge.shm import SegmentRegistry, _key_current  # noqa: E402
+from quorin import layout  # noqa: E402
+from quorin.evolution import upgrade_schema  # noqa: E402
+from quorin.schema import DType, FeatureField, FeatureSchema  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
+from quorin.shm import SegmentRegistry, _key_current  # noqa: E402
 
 
 class _C5Schema(FeatureSchema):
@@ -139,13 +139,13 @@ def test_c5_live_reader_threads_survive_upgrade(redis_client: redis.Redis) -> No
         # Cleanup schema:current pointer.
         redis_client.delete(_key_current(_C5Schema))
         # Drain any cleanup_queue entries left over.
-        for k in redis_client.scan_iter(match="pyforge:upgrade:*", count=100):
+        for k in redis_client.scan_iter(match="quorin:upgrade:*", count=100):
             redis_client.delete(k)
 
 
 # ---------------------------------------------------------------------------
 # Poison-pill: a stale producer's WAL message format-mismatches against
-# the new schema. The defense is in pyforge.wal_consumer._apply (catches
+# the new schema. The defense is in quorin.wal_consumer._apply (catches
 # ValueError from pack_row_from_list).
 # ---------------------------------------------------------------------------
 
@@ -155,7 +155,7 @@ def test_poison_pill_pack_row_from_list_rejects_old_message_format() -> None:
     fires. The end-to-end form (real WAL stream + real consumer) is
     deferred; this locks the underlying invariant.
     """
-    from pyforge._internal.row_pack import pack_row_from_list
+    from quorin._internal.row_pack import pack_row_from_list
 
     new_schema = _C5SchemaV2  # 3 fields
     out = bytearray(h.row_size(new_schema))

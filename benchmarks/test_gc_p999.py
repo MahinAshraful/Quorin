@@ -36,15 +36,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge._internal.gc_manager import (  # noqa: E402
+from quorin._internal.gc_manager import (  # noqa: E402
     freeze,
     start_collector,
     stop_collector,
     unfreeze,
 )
-from pyforge.assembly import assemble, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.assembly import assemble, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 _ITERS = 100_000
 
@@ -68,7 +68,7 @@ class _Schema200(FeatureSchema):
 def _build_long_lived_heap() -> list[Any]:
     """Allocate ~1 M long-lived Python objects so freeze() has something to
     move out of gen-2. Mix of dicts and lists with cross-references; this
-    is what a realistic Pyforge process looks like (segment metadata, slot
+    is what a realistic Quorin process looks like (segment metadata, slot
     tables, schemas, pools, layout offset arrays).
     """
     heap: list[Any] = []
@@ -209,7 +209,7 @@ def test_p999_freeze_plus_timer(seg_200) -> None:
     """Step 7 default: freeze + 500 ms gen-2 timer thread.
 
     Per ADR-006's N=20 repeat-measurement benchmark, this is the default
-    Pyforge ships. 2.3x lower spike rate than freeze-only and 38% lower
+    Quorin ships. 2.3x lower spike rate than freeze-only and 38% lower
     worst-case max in those measurements. The single-run versions of this
     benchmark are noisy — one run can look terrible (a single forced
     collect during a busy moment) while the next looks great. Use

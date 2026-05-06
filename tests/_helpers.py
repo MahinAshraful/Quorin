@@ -2,7 +2,7 @@
 
 Imported via ``from _helpers import ...`` thanks to ``pythonpath = ["tests"]``
 in ``pyproject.toml``. Keep this module dependency-light (numpy + hypothesis +
-pyforge only) so it can be used from unit, property, integration, and
+quorin only) so it can be used from unit, property, integration, and
 benchmark tests without dragging in pytest fixtures or Redis.
 
 Conventions: top-of-file imports of POSIX-only modules require an explicit
@@ -22,14 +22,14 @@ from typing import Any
 import numpy as np
 from hypothesis import strategies as st
 
-from pyforge._internal import posix_shm
-from pyforge._internal.crc import crc32_of_bytes
-from pyforge.layout import (
+from quorin._internal import posix_shm
+from quorin._internal.crc import crc32_of_bytes
+from quorin.layout import (
     DEFAULT_MAX_ID_BYTES,
     compute_layout,
     initialize_segment_regions,
 )
-from pyforge.schema import (
+from quorin.schema import (
     DTYPE_TO_NUMPY,
     DType,
     FeatureField,
@@ -38,10 +38,10 @@ from pyforge.schema import (
     compute_assembly_table,
     row_size,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment
 
 
-def unique_segment_name(prefix: str = "pyforge_test") -> str:
+def unique_segment_name(prefix: str = "quorin_test") -> str:
     """Process-local unique segment name. Tests use it to avoid /dev/shm
     collisions across parallel runs and prior leaks."""
     return f"{prefix}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
@@ -52,7 +52,7 @@ def make_segment(
     capacity: int,
     *,
     max_id_bytes: int = DEFAULT_MAX_ID_BYTES,
-    name_prefix: str = "pyforge_test",
+    name_prefix: str = "quorin_test",
 ) -> Segment:
     """Allocate and initialize a Segment without touching SegmentRegistry / Redis.
 

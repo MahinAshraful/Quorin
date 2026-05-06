@@ -32,7 +32,7 @@ def main() -> None:
     cleanup = state["cleanup"]
 
     try:
-        from pyforge.wal import WALProducer
+        from quorin.wal import WALProducer
 
         producer = WALProducer(
             redis_client=redis_client,
@@ -41,7 +41,7 @@ def main() -> None:
         )
 
         # Build a representative row that matches schema.
-        from pyforge.schema import DTYPE_TO_NUMPY
+        from quorin.schema import DTYPE_TO_NUMPY
 
         row_values = {
             f.name: (

@@ -19,8 +19,8 @@ pytestmark = [
     ),
 ]
 
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import (  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import (  # noqa: E402
     KEY_CLEANUP_QUEUE,
     SegmentRegistry,
     _key_current,

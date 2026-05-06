@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.wal_consumer.WALConsumer + pyforge._internal.row_pack.
+"""Benchmarks for quorin.wal_consumer.WALConsumer + quorin._internal.row_pack.
 
 Decomposed so a regression in any sub-component shows up in isolation:
 
@@ -32,8 +32,8 @@ pytestmark = pytest.mark.skipif(
     reason="WAL consumer benchmarks rely on POSIX shared memory paths",
 )
 
-from pyforge._internal.row_pack import pack_row_from_list  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin._internal.row_pack import pack_row_from_list  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
@@ -136,8 +136,8 @@ def test_row_pack_200_scalar_only(benchmark: Any) -> None:
 import msgpack  # noqa: E402
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal.pydantic_factory import field_order_for, pydantic_model_for  # noqa: E402
-from pyforge.layout import insert as layout_insert  # noqa: E402
+from quorin._internal.pydantic_factory import field_order_for, pydantic_model_for  # noqa: E402
+from quorin.layout import insert as layout_insert  # noqa: E402
 
 
 def _consumer_apply_one(

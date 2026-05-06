@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.row_pack."""
+"""Unit tests for quorin._internal.row_pack."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyforge._internal.row_pack import (
+from quorin._internal.row_pack import (
     _DTYPE_TO_STRUCT_CODE,
     _PLAN_CACHE,
     _build_plan,
     clear_cache,
     pack_row_from_list,
 )
-from pyforge.schema import (
+from quorin.schema import (
     DTYPE_TO_NUMPY,
     DType,
     FeatureField,
@@ -506,7 +506,7 @@ def test_shape_1_treated_as_shaped_not_scalar() -> None:
 
 # ---------------------------------------------------------------------------
 # Step 15 regression: poison-pill defense depends on length-mismatch raise.
-# Locks the consumer-side defense in pyforge.wal_consumer._apply.
+# Locks the consumer-side defense in quorin.wal_consumer._apply.
 # ---------------------------------------------------------------------------
 
 

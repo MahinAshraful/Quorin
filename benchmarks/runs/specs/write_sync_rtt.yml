@@ -1,5 +1,5 @@
 # write_sync end-to-end RTT: producer.write_sync() -> consumer applies ->
-# pyforge:processed:{msg_id} flag set. Sequential single-producer; one full
+# quorin:processed:{msg_id} flag set. Sequential single-producer; one full
 # consumer cycle per call drives p99 to ~50-60ms before backoff jitter.
 # Tier-1 gate is 75ms (math: 1.5x max_consumer_cycle + backoff_cap).
 # Tier-2 N=20 here records the headline number for the README's durability

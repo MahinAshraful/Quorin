@@ -33,7 +33,7 @@ pytestmark = [
 # Subprocess bodies are top-level functions so ``multiprocessing`` can pickle
 # them (fork inherits but doesn't pickle; spawn/forkserver would).
 def _subprocess_read_then_clean_exit(name: str, offset: int, expected_value: float) -> None:
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     h = posix_shm.open_existing(name)
     value = struct.unpack("<d", bytes(h.buf[offset : offset + 8]))[0]
@@ -46,7 +46,7 @@ def _subprocess_read_then_clean_exit(name: str, offset: int, expected_value: flo
 
 
 def _subprocess_read_then_sigkill(name: str, offset: int, expected_value: float) -> None:
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     h = posix_shm.open_existing(name)
     value = struct.unpack("<d", bytes(h.buf[offset : offset + 8]))[0]
@@ -64,7 +64,7 @@ def _subprocess_read_and_report(
     subprocesses to have written their barrier values, then checks the
     sentinel is still readable after they all exit.
     """
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     h = posix_shm.open_existing(name)
     value = struct.unpack("<d", bytes(h.buf[offset : offset + 8]))[0]
@@ -77,7 +77,7 @@ def _subprocess_read_and_report(
 
 
 def _unique_name() -> str:
-    return f"pyforge_xtest_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    return f"quorin_xtest_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
 def _write_sentinel(handle, offset: int, value: float) -> None:
@@ -101,7 +101,7 @@ def test_reader_clean_exit_does_not_destroy_segment(_mp_context) -> None:
     This is the resource_tracker-bug test: stdlib SharedMemory would unlink
     the segment on clean exit. posix_ipc does not.
     """
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     name = _unique_name()
     sentinel = 3.14
@@ -140,7 +140,7 @@ def test_reader_sigkill_does_not_destroy_segment(_mp_context) -> None:
     bug anyway because Python cleanup doesn't run), but covers the
     real-world "my serving process crashed" scenario.
     """
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     name = _unique_name()
     sentinel = 2.71828
@@ -175,7 +175,7 @@ def test_three_parallel_readers_all_see_sentinel(_mp_context) -> None:
     """Three subprocesses open the same segment concurrently, each writes a
     distinct barrier value, all exit cleanly. After they're done, the
     parent's sentinel is still readable."""
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     name = _unique_name()
     sentinel = 1.6180339887
@@ -234,7 +234,7 @@ def test_three_parallel_readers_all_see_sentinel(_mp_context) -> None:
 
 def _subprocess_registry_read(name: str, offset: int, expected: float) -> None:
     """Top-level (picklable) subprocess body for the registry roundtrip test."""
-    from pyforge._internal import posix_shm
+    from quorin._internal import posix_shm
 
     h = posix_shm.open_existing(name)
     try:
@@ -247,8 +247,8 @@ def _subprocess_registry_read(name: str, offset: int, expected: float) -> None:
 def test_registry_roundtrip_across_processes(redis_client, _mp_context) -> None:
     """High-level: create via SegmentRegistry, open the segment by name in a
     subprocess, read the sentinel bytes, exit cleanly. Parent still reads."""
-    from pyforge.schema import FeatureField, FeatureSchema, dtype
-    from pyforge.shm import HEADER_LEN, SegmentRegistry
+    from quorin.schema import FeatureField, FeatureSchema, dtype
+    from quorin.shm import HEADER_LEN, SegmentRegistry
 
     class _XSchema(FeatureSchema):
         version = 1

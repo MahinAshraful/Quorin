@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.schema.
+"""Unit tests for quorin.schema.
 
 Covers FeatureField value checks, FeatureSchema class-definition-time
 validation, compile_schema layout/determinism, total_segment_size page
@@ -14,8 +14,8 @@ from dataclasses import FrozenInstanceError
 import numpy as np
 import pytest
 
-import pyforge.schema as _schema_module
-from pyforge.schema import (
+import quorin.schema as _schema_module
+from quorin.schema import (
     CACHE_LINE_SIZE,
     HEADER_SIZE,
     OFFSET_TABLE_DTYPE,
@@ -329,7 +329,7 @@ def test_hash_uniqueness_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     def collide(_name: str) -> int:
         return 42
 
-    monkeypatch.setattr("pyforge.schema._hash_name", collide)
+    monkeypatch.setattr("quorin.schema._hash_name", collide)
 
     class _S(FeatureSchema):
         version = 1
@@ -398,7 +398,7 @@ def test_unicode_name_hashed_as_utf8() -> None:
 
 
 def test_schema_module_has_no_heavy_imports() -> None:
-    """Spec acceptance: no numba/redis/pyarrow/pydantic in pyforge.schema."""
+    """Spec acceptance: no numba/redis/pyarrow/pydantic in quorin.schema."""
     forbidden = {"numba", "redis", "pyarrow", "pydantic"}
     src = inspect.getsource(_schema_module)
     for bad in forbidden:

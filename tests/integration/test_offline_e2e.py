@@ -35,14 +35,14 @@ import redis  # noqa: E402
 import redis.asyncio  # noqa: E402
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
-from pyforge._internal.pydantic_factory import clear_cache as clear_pydantic_cache  # noqa: E402
-from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
-from pyforge.wal import DEFAULT_STREAM_KEY, WALProducer  # noqa: E402
-from pyforge.wal_consumer import WALConsumer  # noqa: E402
+from quorin._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
+from quorin._internal.pydantic_factory import clear_cache as clear_pydantic_cache  # noqa: E402
+from quorin._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
+from quorin.wal import DEFAULT_STREAM_KEY, WALProducer  # noqa: E402
+from quorin.wal_consumer import WALConsumer  # noqa: E402
 
 # Step 15 stub registry — these tests don't exercise the upgrade pause-clear
 # branch (the only place self._registry is dereferenced), so a Mock with the
@@ -69,7 +69,7 @@ def _values(i: int) -> dict[str, object]:
 
 def _pending_count(redis_client: redis.Redis) -> int:
     try:
-        info = redis_client.xpending(DEFAULT_STREAM_KEY, "pyforge_consumers")
+        info = redis_client.xpending(DEFAULT_STREAM_KEY, "quorin_consumers")
     except redis.exceptions.ResponseError as e:
         if "NOGROUP" in str(e):
             return -1
@@ -95,7 +95,7 @@ def segment():
 
 @pytest.fixture
 async def async_redis(redis_client: redis.Redis):
-    url = os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    url = os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
     client = redis.asyncio.Redis.from_url(url, decode_responses=False)
     try:
         await client.ping()

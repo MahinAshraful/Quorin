@@ -32,14 +32,14 @@ import numpy as np  # noqa: E402
 import redis  # noqa: E402
 
 import _helpers as h  # noqa: E402
-from pyforge import layout  # noqa: E402
-from pyforge.evolution import (  # noqa: E402
+from quorin import layout  # noqa: E402
+from quorin.evolution import (  # noqa: E402
     UpgradeConflictError,
     upgrade_schema,
 )
-from pyforge.schema import DType, FeatureField, FeatureSchema  # noqa: E402
-from pyforge.serving import assemble  # noqa: E402
-from pyforge.shm import SegmentRegistry, _key_current  # noqa: E402
+from quorin.schema import DType, FeatureField, FeatureSchema  # noqa: E402
+from quorin.serving import assemble  # noqa: E402
+from quorin.shm import SegmentRegistry, _key_current  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas — class names match across versions (upgrades preserve identity).
@@ -225,7 +225,7 @@ def test_e5_concurrent_upgrades_lock_serializes(
                 results["t1_error"] = type(e).__name__
 
         # Hold the lock externally so T1 can't acquire.
-        lock_key = b"pyforge:upgrade:lock:_IntE2EEvo"
+        lock_key = b"quorin:upgrade:lock:_IntE2EEvo"
         redis_client.set(lock_key, b"externally_held", nx=True, ex=60)
         try:
             t = threading.Thread(target=upgrade_in_thread)
@@ -340,7 +340,7 @@ def test_upgrade_refuses_if_wal_stream_has_pending_messages(
     _populate_old_segment(registry, redis_client, n_rows=2)
     # Write a fake message to the WAL stream so XLEN > 0.
     redis_client.xadd(
-        b"pyforge:wal", {b"schema": b"_IntE2EEvo", b"entity_id": b"x", b"blob": b"\x01"}
+        b"quorin:wal", {b"schema": b"_IntE2EEvo", b"entity_id": b"x", b"blob": b"\x01"}
     )
     try:
         with pytest.raises(UpgradeConflictError, match="WAL not drained"):
@@ -353,7 +353,7 @@ def test_upgrade_refuses_if_wal_stream_has_pending_messages(
             )
     finally:
         # Drain the stream + drop schema:current.
-        redis_client.delete(b"pyforge:wal")
+        redis_client.delete(b"quorin:wal")
         _drop_current(redis_client)
 
 
@@ -365,5 +365,5 @@ def test_upgrade_refuses_if_wal_stream_has_pending_messages(
 @pytest.fixture(autouse=True)
 def _cleanup_evolution_keys(redis_client: redis.Redis) -> None:
     """Pre-test cleanup: drop any leftover Step 15 keys from prior runs."""
-    for k in redis_client.scan_iter(match="pyforge:upgrade:*", count=100):
+    for k in redis_client.scan_iter(match="quorin:upgrade:*", count=100):
         redis_client.delete(k)

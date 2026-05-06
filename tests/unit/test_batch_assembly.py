@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.assembly.assemble_batch (Step 8).
+"""Unit tests for quorin.assembly.assemble_batch (Step 8).
 
 Mirrors tests/unit/test_assembly.py for the single-entity Numba path. Step 8's
 parity test (tests/property/test_batch_parity.py) handles property-based
@@ -20,9 +20,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.assembly import assemble, assemble_batch, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.assembly import assemble, assemble_batch, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     dtype,
@@ -313,9 +313,9 @@ def test_hash_collision_probing_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # Force every hash_entity_id call to return the same value. The slot
     # table will then have multiple OCCUPIED slots whose hashes match every
     # query; the byte-compare in the kernel must resolve them.
-    import pyforge._internal.hash_id as hash_id_mod
-    import pyforge.assembly as assembly_mod
-    import pyforge.layout as layout_mod
+    import quorin._internal.hash_id as hash_id_mod
+    import quorin.assembly as assembly_mod
+    import quorin.layout as layout_mod
 
     fixed_hash = 0xDEADBEEF_CAFEBABE
     monkeypatch.setattr(hash_id_mod, "hash_entity_id", lambda _eid: fixed_hash)
@@ -480,11 +480,11 @@ def test_parallel_kernel_parity_to_serial(monkeypatch: pytest.MonkeyPatch) -> No
             insert(seg, eid, pack_row(_AllDtypes, values))
 
         # Force serial.
-        monkeypatch.setattr("pyforge.assembly.PARALLEL_THRESHOLD", 1_000_000)
+        monkeypatch.setattr("quorin.assembly.PARALLEL_THRESHOLD", 1_000_000)
         out_serial, mask_serial = assemble_batch(seg, ids)
 
         # Force parallel.
-        monkeypatch.setattr("pyforge.assembly.PARALLEL_THRESHOLD", 0)
+        monkeypatch.setattr("quorin.assembly.PARALLEL_THRESHOLD", 0)
         out_parallel, mask_parallel = assemble_batch(seg, ids)
 
         np.testing.assert_array_equal(out_serial, out_parallel)
@@ -511,7 +511,7 @@ def test_parallel_kernel_handles_misses(monkeypatch: pytest.MonkeyPatch) -> None
         ids = [f"hit_{i}" for i in range(32)] + [f"miss_{i}" for i in range(32)]
 
         # Force parallel.
-        monkeypatch.setattr("pyforge.assembly.PARALLEL_THRESHOLD", 0)
+        monkeypatch.setattr("quorin.assembly.PARALLEL_THRESHOLD", 0)
         out, mask = assemble_batch(seg, ids)
 
         # Hits are correct.
@@ -531,7 +531,7 @@ def test_slot_byte_layout_constants_pinned() -> None:
     A reorder of SLOT_DTYPE fields would silently return wrong rows; this
     test fails loudly first.
     """
-    from pyforge.layout import (
+    from quorin.layout import (
         SLOT_BYTES,
         SLOT_DTYPE,
         SLOT_FEATURE_ROW_INDEX_OFFSET,

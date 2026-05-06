@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.offline.ParquetDatasetStore (Step 11).
+"""Benchmarks for quorin.offline.ParquetDatasetStore (Step 11).
 
 Five benches, decomposed so a regression in any sub-component shows up
 in isolation:
@@ -36,14 +36,14 @@ pytestmark = pytest.mark.skipif(
     reason="Step 11 benchmarks rely on POSIX fsync + atomic rename",
 )
 
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     _arrow_plan_for,
 )
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     clear_cache as clear_arrow_cache,
 )
-from pyforge.offline import ParquetDatasetStore, _Bucket  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.offline import ParquetDatasetStore, _Bucket  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Schemas. Match the shapes used by the WAL benches so end-to-end story
@@ -74,7 +74,7 @@ def _make_200_field_schema() -> type[FeatureSchema]:
 def _values_in_wire_order(schema: type[FeatureSchema]) -> list[Any]:
     """Build a representative values list in the same wire (name_hash)
     order the WAL producer emits."""
-    from pyforge.schema import _hash_name
+    from quorin.schema import _hash_name
 
     by_name: dict[str, Any] = {}
     for f in schema.fields:
@@ -177,7 +177,7 @@ def _bench_flush(
         store._buffers[(schema, "1970-01-01")] = bucket
         store._plans[schema] = plan
         # Ensure metric label children exist (normally done at first append).
-        from pyforge.metrics import (
+        from quorin.metrics import (
             offline_bytes_written_total,
             offline_files_written_total,
         )

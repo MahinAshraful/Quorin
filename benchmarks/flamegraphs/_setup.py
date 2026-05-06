@@ -42,15 +42,15 @@ if sys.platform != "linux":
     raise SystemExit("flamegraph drivers require Linux POSIX shm + /sys")
 
 from benchmarks._cache_clobber import detect_l3_size_bytes
-from pyforge._internal import posix_shm
-from pyforge._internal.crc import crc32_of_bytes
-from pyforge.layout import (
+from quorin._internal import posix_shm
+from quorin._internal.crc import crc32_of_bytes
+from quorin.layout import (
     DEFAULT_MAX_ID_BYTES,
     compute_layout,
     initialize_segment_regions,
     insert,
 )
-from pyforge.schema import (
+from quorin.schema import (
     DTYPE_TO_NUMPY,
     FeatureField,
     FeatureSchema,
@@ -59,7 +59,7 @@ from pyforge.schema import (
     dtype,
     row_size,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment
 
 # ---------------------------------------------------------------------------
 # Schemas — mirror benchmarks/test_assembly_benchmark.py.
@@ -96,7 +96,7 @@ Schema200Field = _build_n_field_schema(200, with_embedding=True)
 # ---------------------------------------------------------------------------
 
 
-def _unique_segment_name(prefix: str = "pyforge_flame") -> str:
+def _unique_segment_name(prefix: str = "quorin_flame") -> str:
     return f"{prefix}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
@@ -189,15 +189,15 @@ def make_clobber_array() -> np.ndarray[Any, np.dtype[np.float64]]:
 def populate_dataset_for_hydration(*, n_entities: int, schema: type[FeatureSchema]) -> Path:
     """Write a Parquet dataset suitable for hydration to read.
 
-    Uses :class:`pyforge.offline.ParquetDatasetStore.append` for the write
+    Uses :class:`quorin.offline.ParquetDatasetStore.append` for the write
     path (matches the production-shaped offline store layout). Returns the
-    path the driver passes to :func:`pyforge.hydration.hydrate`.
+    path the driver passes to :func:`quorin.hydration.hydrate`.
     """
-    # Deferred import: pyforge.offline pulls pyarrow (~50 ms) which we don't
+    # Deferred import: quorin.offline pulls pyarrow (~50 ms) which we don't
     # want at module-import time of this helper.
-    from pyforge.offline import ParquetDatasetStore
+    from quorin.offline import ParquetDatasetStore
 
-    tmp_dir = tempfile.mkdtemp(prefix="pyforge_flame_hydrate_")
+    tmp_dir = tempfile.mkdtemp(prefix="quorin_flame_hydrate_")
     dataset_path = Path(tmp_dir)
     store = ParquetDatasetStore(
         dataset_path=dataset_path,
@@ -240,10 +240,10 @@ def setup_redis_consumer_50_field() -> dict[str, Any]:
     import redis
     import redis.asyncio as redis_async
 
-    from pyforge.shm import SegmentRegistry
-    from pyforge.wal_consumer import NoopOfflineWriter, WALConsumer
+    from quorin.shm import SegmentRegistry
+    from quorin.wal_consumer import NoopOfflineWriter, WALConsumer
 
-    redis_url = os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    redis_url = os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
     redis_client = redis.Redis.from_url(redis_url, decode_responses=False)
     redis_client.ping()  # fail fast if Redis is unreachable
 
@@ -255,8 +255,8 @@ def setup_redis_consumer_50_field() -> dict[str, Any]:
     )
     schema = type("_FlameS50", (FeatureSchema,), {"version": 1, "fields": fields})
 
-    bench_stream = b"pyforge:wal:flame:rtt:50f"
-    bench_group = "pyforge_flame_rtt_50f_consumers"
+    bench_stream = b"quorin:wal:flame:rtt:50f"
+    bench_group = "quorin_flame_rtt_50f_consumers"
     redis_client.delete(bench_stream)
     with contextlib.suppress(Exception):
         redis_client.execute_command("XGROUP", "DESTROY", bench_stream, bench_group)

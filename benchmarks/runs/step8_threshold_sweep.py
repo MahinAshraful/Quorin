@@ -1,4 +1,4 @@
-"""Step 8 — threshold sweep for ``PARALLEL_THRESHOLD`` in pyforge.assembly.
+"""Step 8 — threshold sweep for ``PARALLEL_THRESHOLD`` in quorin.assembly.
 
 Sweeps batch sizes for both the serial and parallel batch kernels at the
 200-field schema (the headline schema where the parallelism win matters most).
@@ -41,10 +41,10 @@ _REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "tests"))
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge import assembly as assembly_mod  # noqa: E402
-from pyforge.assembly import assemble_batch, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin import assembly as assembly_mod  # noqa: E402
+from quorin.assembly import assemble_batch, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
 
 OUTPUT = _REPO / "benchmarks" / "results" / "step8_threshold_sweep.txt"
 

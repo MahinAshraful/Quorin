@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.posix_shm.
+"""Unit tests for quorin._internal.posix_shm.
 
 These are low-level tests of the POSIX wrapper — no Redis, no Segment, no
 schema. They prove the wrapper correctly bypasses CPython's resource_tracker
@@ -23,10 +23,10 @@ pytestmark = pytest.mark.skipif(
 
 # Imports that require posix_ipc are placed inside the conditional guard so
 # collection on Windows doesn't explode.
-from pyforge._internal import posix_shm  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
 
 
-def _unique_name(prefix: str = "pyforge_test") -> str:
+def _unique_name(prefix: str = "quorin_test") -> str:
     return f"{prefix}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
@@ -67,7 +67,7 @@ class TestCreate:
 class TestOpenExisting:
     def test_open_nonexistent_raises_file_not_found(self) -> None:
         with pytest.raises(FileNotFoundError):
-            posix_shm.open_existing(_unique_name("pyforge_test_missing"))
+            posix_shm.open_existing(_unique_name("quorin_test_missing"))
 
     def test_open_then_read_written_bytes(self) -> None:
         name = _unique_name()
@@ -139,4 +139,4 @@ class TestUnlink:
 
     def test_unlink_on_missing_name_is_idempotent(self) -> None:
         # Must not raise — Step 14's watchdog relies on this.
-        posix_shm.unlink(_unique_name("pyforge_test_ghost"))
+        posix_shm.unlink(_unique_name("quorin_test_ghost"))

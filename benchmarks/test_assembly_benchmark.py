@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.assembly.assemble (Numba kernel).
+"""Benchmarks for quorin.assembly.assemble (Numba kernel).
 
 These run alongside benchmarks/test_serving_benchmark.py (Python oracle) so
 the two p99 numbers can be compared directly. ADR-004's adoption gate is
@@ -46,10 +46,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 from _helpers import make_segment, pack_row, release_segment  # noqa: E402
-from pyforge.assembly import assemble, prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.serving import EntityNotFoundError  # noqa: E402
+from quorin.assembly import assemble, prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.serving import EntityNotFoundError  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level autouse pre-warm — eliminates first-call compile cost from

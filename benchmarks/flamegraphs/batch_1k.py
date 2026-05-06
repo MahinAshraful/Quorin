@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import numpy as np
 
 from benchmarks.flamegraphs._setup import Schema200Field, _make_segment, _pack_row
-from pyforge.assembly import assemble_batch, prewarm
-from pyforge.layout import insert
+from quorin.assembly import assemble_batch, prewarm
+from quorin.layout import insert
 
 DURATION_SECONDS = 60.0
 N_BATCH = 1000

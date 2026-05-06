@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.layout.
+"""Unit tests for quorin.layout.
 
 Most tests bypass Redis by creating a Segment directly from a POSIX shm
 handle + a manually-computed SegmentLayout. This lets layout tests run on
@@ -21,10 +21,10 @@ pytestmark = pytest.mark.skipif(
     reason="layout requires POSIX (Linux/WSL2)",
 )
 
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge._internal.hash_id import hash_entity_id  # noqa: E402
-from pyforge._internal.insert_kernel import insert_many  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin._internal.hash_id import hash_entity_id  # noqa: E402
+from quorin._internal.insert_kernel import insert_many  # noqa: E402
+from quorin.layout import (  # noqa: E402
     DATA_REGION_OFFSET,
     DEFAULT_MAX_ID_BYTES,
     EMPTY,
@@ -43,7 +43,7 @@ from pyforge.layout import (  # noqa: E402
     lookup,
     total_segment_size,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     CACHE_LINE_SIZE,
     PAGE_SIZE,
     FeatureField,
@@ -52,7 +52,7 @@ from pyforge.schema import (  # noqa: E402
     dtype,
     row_size,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test schemas
@@ -80,7 +80,7 @@ class _EmbeddingSchema(FeatureSchema):
 # ---------------------------------------------------------------------------
 
 
-def _unique_name(prefix: str = "pyforge_layout_test") -> str:
+def _unique_name(prefix: str = "quorin_layout_test") -> str:
     return f"{prefix}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
 
 
@@ -97,8 +97,8 @@ def _make_segment(
 
     # Write the primary header so _verify_header would accept it (some tests
     # don't need this, but keeping it consistent saves friction).
-    from pyforge._internal.crc import crc32_of_bytes
-    from pyforge.schema import compile_schema
+    from quorin._internal.crc import crc32_of_bytes
+    from quorin.schema import compile_schema
 
     crc = crc32_of_bytes(compile_schema(schema).tobytes())
     header = struct.pack(HEADER_FMT, MAGIC, int(schema.version), crc, capacity)

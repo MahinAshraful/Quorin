@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.wal_consumer.WALConsumer.
+"""Unit tests for quorin.wal_consumer.WALConsumer.
 
 These tests use a hand-rolled in-memory ``AsyncFakeRedis`` so they don't
 require the integration Redis service. The integration suite at
@@ -27,21 +27,21 @@ from unittest.mock import Mock as _Mock  # noqa: E402
 import redis.exceptions  # noqa: E402
 
 from _helpers import make_segment, release_segment  # noqa: E402
-from pyforge._internal.pydantic_factory import (  # noqa: E402
+from quorin._internal.pydantic_factory import (  # noqa: E402
     clear_cache as clear_pydantic_cache,
 )
-from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
-from pyforge.layout import lookup  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
-from pyforge.wal import (  # noqa: E402
+from quorin._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
+from quorin.layout import lookup  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
+from quorin.wal import (  # noqa: E402
     _F_BLOB,
     _F_ENTITY_ID,
     _F_EVENT_TIME,
     _F_SCHEMA,
     PROCESSED_KEY_PREFIX,
 )
-from pyforge.wal_consumer import (  # noqa: E402
+from quorin.wal_consumer import (  # noqa: E402
     ConsumerNameInUseError,
     NoopOfflineWriter,
     WALConsumer,
@@ -325,7 +325,7 @@ def _wire_msg(
 
 def _values_for_S(a: float, b: int, emb: list[float]) -> list[Any]:  # noqa: N802
     """Reorder values into the producer's name_hash wire order for _S."""
-    from pyforge._internal.pydantic_factory import field_order_for
+    from quorin._internal.pydantic_factory import field_order_for
 
     by_name: dict[str, Any] = {"a": a, "b": b, "emb": emb}
     return [by_name[name] for name in field_order_for(_S)]
@@ -723,14 +723,14 @@ async def test_liveness_gauge_does_not_read_system_uptime_at_startup(
     import os
     import types
 
-    from pyforge.metrics import (
+    from quorin.metrics import (
         wal_consumer_liveness_age_seconds,
     )
-    from pyforge.wal_consumer import (
+    from quorin.wal_consumer import (
         LIVENESS_REFRESH_INTERVAL_SECONDS,
     )
 
-    # Simulate a 1-day-uptime box. Replace `pyforge.wal_consumer.time`
+    # Simulate a 1-day-uptime box. Replace `quorin.wal_consumer.time`
     # with a tiny stub object exposing `monotonic` and `perf_counter` —
     # avoids mutating the global `time` module which would affect
     # pytest's own clock.
@@ -741,7 +741,7 @@ async def test_liveness_gauge_does_not_read_system_uptime_at_startup(
         monotonic=lambda: fake_now,
         perf_counter=real_time.perf_counter,
     )
-    monkeypatch.setattr("pyforge.wal_consumer.time", fake_time)
+    monkeypatch.setattr("quorin.wal_consumer.time", fake_time)
 
     consumer = WALConsumer(
         fake_redis,  # type: ignore[arg-type]

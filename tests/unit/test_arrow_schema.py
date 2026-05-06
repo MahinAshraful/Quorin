@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.arrow_schema."""
+"""Unit tests for quorin._internal.arrow_schema."""
 
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ pytestmark = pytest.mark.skipif(
 
 import pyarrow as pa  # noqa: E402
 
-from pyforge._internal.arrow_schema import (  # noqa: E402
+from quorin._internal.arrow_schema import (  # noqa: E402
     _PLAN_CACHE,
     _arrow_plan_for,
     _arrow_type_for,
     clear_cache,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     DType,
     FeatureField,
     FeatureSchema,

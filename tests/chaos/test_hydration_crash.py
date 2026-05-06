@@ -1,4 +1,4 @@
-"""Chaos tests for pyforge.hydration: SIGKILL during insert_many + concurrent race.
+"""Chaos tests for quorin.hydration: SIGKILL during insert_many + concurrent race.
 
 Step 13 Commit B chaos coverage:
 
@@ -47,16 +47,16 @@ from _watchdog_helpers import (  # noqa: E402
     simulate_watchdog_post_crash_cleanup,
 )
 
-from pyforge.hydration import hydrate  # noqa: E402
-from pyforge.layout import lookup  # noqa: E402
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import (  # noqa: E402
+from quorin.hydration import hydrate  # noqa: E402
+from quorin.layout import lookup  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     _hash_name,
     dtype,
 )
-from pyforge.shm import SegmentRegistry  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Multiprocessing contexts — Rev-3 HIGH #4: get_context, no global mutation.
@@ -100,7 +100,7 @@ def _hydrate_then_sigkill_at_delay_ms(
        call — `next_row` jumps from 0 to N at the end. There's no
        observable mid-insert progress to poll.
     2. The killer's ``registry.open_current`` + ``registry.close``
-       calls mutate ``pyforge:pid_segments:{child_pid}`` — the very
+       calls mutate ``quorin:pid_segments:{child_pid}`` — the very
        Redis state the watchdog walks after the kill. The close-
        in-killer leaves pid_segments empty, so the parent's
        watchdog cleanup finds nothing to clean.
@@ -115,8 +115,8 @@ def _hydrate_then_sigkill_at_delay_ms(
     """
     import redis as _redis
 
-    from pyforge.hydration import hydrate
-    from pyforge.shm import SegmentRegistry
+    from quorin.hydration import hydrate
+    from quorin.shm import SegmentRegistry
 
     redis_client = _redis.Redis.from_url(redis_url)
     registry = SegmentRegistry(redis_client)
@@ -198,7 +198,7 @@ def _build_dataset(base: Path, n_entities: int, *, seed: int = 42) -> None:
 
 
 def _redis_url() -> str:
-    return os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
 
 
 # Note: `redis_client` is provided by tests/conftest.py (session-scoped sync
@@ -227,7 +227,7 @@ def _scrub_consumer_locks(redis_client) -> None:
 
     Mirrors test_wal_consumer_crash_safety.py:176-177.
     """
-    for k in redis_client.scan_iter(match="pyforge:consumer:lock:*", count=100):
+    for k in redis_client.scan_iter(match="quorin:consumer:lock:*", count=100):
         redis_client.delete(k)
 
 
@@ -298,7 +298,7 @@ def test_c1_sigkill_during_insert_many_leaves_no_corruption(
 # contract isn't actually provided by the orchestrator:
 #
 # - registry.create() uses UUID-suffixed segment names (see
-#   pyforge.shm._segment_name), so two concurrent calls create
+#   quorin.shm._segment_name), so two concurrent calls create
 #   DISTINCT segments — neither hits FileExistsError.
 # - Both children pass preconditions in the race window, both call
 #   registry.create() successfully, both proceed to insert_many,
@@ -308,7 +308,7 @@ def test_c1_sigkill_during_insert_many_leaves_no_corruption(
 #
 # This is a real concurrency hazard, but the orchestrator's
 # documented contract is "Operators must serialize hydrate() calls"
-# (pyforge.hydration docstring). The system converges on watchdog
+# (quorin.hydration docstring). The system converges on watchdog
 # cleanup of orphans (Step 14), but there's no in-orchestrator
 # guarantee that exactly one wins.
 #
@@ -344,7 +344,7 @@ def test_c3_sigkill_then_watchdog_simulation_then_retry_succeeds(
         f"child did NOT receive SIGKILL — exitcode={proc.exitcode}"
     )
 
-    # Watchdog simulation: walks pyforge:pid_segments:{dead_pid}, DECRs
+    # Watchdog simulation: walks quorin:pid_segments:{dead_pid}, DECRs
     # refcounts, unlinks segments, drops schema:*:current pointers.
     # The return count is informational only (may be 0 if the child died
     # BEFORE registry.create registered the segment); contract is "retry

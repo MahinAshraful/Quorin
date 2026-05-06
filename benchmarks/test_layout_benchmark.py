@@ -1,4 +1,4 @@
-"""Benchmarks for pyforge.layout.
+"""Benchmarks for quorin.layout.
 
 These run the **pure-Python** implementation. The 200 ns spec target is for
 the Numba-compiled hot path (Step 5); these baselines exist so Step 5 has
@@ -25,21 +25,21 @@ pytestmark = pytest.mark.skipif(
     reason="layout requires POSIX (Linux/WSL2)",
 )
 
-from pyforge._internal import posix_shm  # noqa: E402
-from pyforge._internal.crc import crc32_of_bytes  # noqa: E402
-from pyforge.layout import (  # noqa: E402
+from quorin._internal import posix_shm  # noqa: E402
+from quorin._internal.crc import crc32_of_bytes  # noqa: E402
+from quorin.layout import (  # noqa: E402
     compute_layout,
     initialize_segment_regions,
     insert,
     lookup,
 )
-from pyforge.schema import (  # noqa: E402
+from quorin.schema import (  # noqa: E402
     FeatureField,
     FeatureSchema,
     compile_schema,
     dtype,
 )
-from pyforge.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
+from quorin.shm import HEADER_FMT, HEADER_LEN, MAGIC, Segment  # noqa: E402
 
 
 class _TwoFieldSchema(FeatureSchema):
@@ -52,7 +52,7 @@ class _TwoFieldSchema(FeatureSchema):
 
 def _make_segment(capacity: int = 1024):
     layout = compute_layout(_TwoFieldSchema, capacity=capacity)
-    name = f"pyforge_bench_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    name = f"quorin_bench_{os.getpid()}_{uuid.uuid4().hex[:8]}"
     handle = posix_shm.create(name, layout.total_size)
     crc = crc32_of_bytes(compile_schema(_TwoFieldSchema).tobytes())
     handle.buf[:HEADER_LEN] = struct.pack(

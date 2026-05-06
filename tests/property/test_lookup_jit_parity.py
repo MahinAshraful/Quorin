@@ -1,4 +1,4 @@
-"""Parity tests: pyforge.layout.lookup (Python) vs pyforge._internal.lookup_kernel.lookup_jit (Numba).
+"""Parity tests: quorin.layout.lookup (Python) vs quorin._internal.lookup_kernel.lookup_jit (Numba).
 
 THE Step 16c parity test. Hypothesis-driven over random schemas + random
 entity-id sets. Both implementations must return byte-identical row
@@ -9,7 +9,7 @@ If this test ever fails, lookup-jit has regressed against the Python
 oracle and ADR-017's design contract is broken.
 
 Note: tests/property/test_assembly_parity.py provides transitive coverage
-because pyforge.assembly.assemble now calls lookup_jit internally — any
+because quorin.assembly.assemble now calls lookup_jit internally — any
 divergence there would also break the assembly parity test. This file is
 the focused single-primitive parity guard, easier to debug when only
 lookup is wrong.
@@ -35,9 +35,9 @@ from _helpers import (  # noqa: E402
     make_segment,
     release_segment,
 )
-from pyforge._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
-from pyforge.layout import insert, lookup  # noqa: E402
-from pyforge.schema import FeatureField  # noqa: E402
+from quorin._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
+from quorin.layout import insert, lookup  # noqa: E402
+from quorin.schema import FeatureField  # noqa: E402
 
 _HYPO = settings(
     max_examples=200,
@@ -103,7 +103,7 @@ def _unique_id_list(draw: st.DrawFn) -> list[str]:
 @given(field_list=field_list_strategy(), entity_ids=_unique_id_list())
 def test_hit_path_parity(field_list: list[FeatureField], entity_ids: list[str]) -> None:
     """For every inserted entity_id, lookup_jit returns the same row_offset
-    as pyforge.layout.lookup."""
+    as quorin.layout.lookup."""
     schema = build_dynamic_schema(field_list)
     capacity = max(len(entity_ids), 2)
     seg = make_segment(schema, capacity=capacity)

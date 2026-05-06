@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.watchdog (Step 14).
+"""Unit tests for quorin.watchdog (Step 14).
 
 Tests use real Redis (via the ``redis_client`` fixture) because the Lua
 scripts must execute server-side. ``psutil.Process(pid).create_time`` is
@@ -26,8 +26,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-from pyforge._internal import heartbeat  # noqa: E402
-from pyforge.watchdog import (  # noqa: E402
+from quorin._internal import heartbeat  # noqa: E402
+from quorin.watchdog import (  # noqa: E402
     WatchdogState,
     _parse_heartbeat_value,
     _PidEntry,
@@ -49,10 +49,10 @@ def _make_segment_in_redis(redis_client: redis.Redis, name: str, pid: int) -> No
     touches the actual segment until Python loops over the returned
     names and calls posix_shm.unlink (which we mock in many tests).
     """
-    redis_client.set(f"pyforge:refcount:{name}", 1)
-    redis_client.sadd(f"pyforge:pid_segments:{pid}", name)
-    redis_client.hset("pyforge:segment_to_schema", name, "_FakeSchema")
-    redis_client.set("pyforge:schema:_FakeSchema:current", name)
+    redis_client.set(f"quorin:refcount:{name}", 1)
+    redis_client.sadd(f"quorin:pid_segments:{pid}", name)
+    redis_client.hset("quorin:segment_to_schema", name, "_FakeSchema")
+    redis_client.set("quorin:schema:_FakeSchema:current", name)
 
 
 def _heartbeat_value(create_ns: int, wall_ns: int) -> bytes:
@@ -109,13 +109,13 @@ def test_heartbeat_advancing_pid_not_declared_dead(
 ) -> None:
     """wall_time_ns advances every tick → miss_count stays at 0."""
     state = WatchdogState(redis_client)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()  # initial track
 
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1100))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1100))
     state.run_one_tick()  # advanced
 
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1200))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1200))
     result = state.run_one_tick()
 
     assert state._tracked[fake_pid].miss_count == 0
@@ -129,14 +129,14 @@ def test_heartbeat_unchanged_psutil_dead_declares_dead(
     confirms NoSuchProcess → declare dead, run cleanup Lua, unlink.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    _make_segment_in_redis(redis_client, "pyforge_test_seg_a", fake_pid)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    _make_segment_in_redis(redis_client, "quorin_test_seg_a", fake_pid)
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()  # seed
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
     with (
-        patch("pyforge.watchdog.psutil.Process") as mock_process,
-        patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink,
+        patch("quorin.watchdog.psutil.Process") as mock_process,
+        patch("quorin.watchdog.posix_shm.unlink") as mock_unlink,
     ):
         mock_process.side_effect = psutil.NoSuchProcess(fake_pid)
         result = state.run_one_tick()
@@ -146,12 +146,12 @@ def test_heartbeat_unchanged_psutil_dead_declares_dead(
     # step-4 drain in the SAME tick unlinks it (single canonical syscall site).
     assert result.segments_unlinked_dead == 1
     assert result.segments_unlinked_drain == 1
-    mock_unlink.assert_called_once_with("pyforge_test_seg_a")
+    mock_unlink.assert_called_once_with("quorin_test_seg_a")
     # Redis state cleaned by Lua.
-    assert not redis_client.exists("pyforge:refcount:pyforge_test_seg_a")
-    assert not redis_client.exists("pyforge:schema:_FakeSchema:current")
-    assert not redis_client.hexists("pyforge:segment_to_schema", "pyforge_test_seg_a")
-    assert not redis_client.hexists("pyforge:heartbeats", str(fake_pid))
+    assert not redis_client.exists("quorin:refcount:quorin_test_seg_a")
+    assert not redis_client.exists("quorin:schema:_FakeSchema:current")
+    assert not redis_client.hexists("quorin:segment_to_schema", "quorin_test_seg_a")
+    assert not redis_client.hexists("quorin:heartbeats", str(fake_pid))
 
 
 def test_heartbeat_unchanged_psutil_alive_matching_does_not_declare_dead(
@@ -161,11 +161,11 @@ def test_heartbeat_unchanged_psutil_alive_matching_does_not_declare_dead(
     BUT psutil reports alive AND create_time matches → NOT declared dead.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
-    with patch("pyforge.watchdog.psutil.Process") as mock_process:
+    with patch("quorin.watchdog.psutil.Process") as mock_process:
         mock_proc_instance = MagicMock()
         # create_time returns float seconds; * 1e9 → 100 (matches stored value).
         mock_proc_instance.create_time.return_value = 100 / 1e9
@@ -185,14 +185,14 @@ def test_heartbeat_unchanged_psutil_alive_different_create_time_declares_dead(
     instance; original is gone). MEDIUM-Rev2 #7 contract test.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    _make_segment_in_redis(redis_client, "pyforge_test_seg_b", fake_pid)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    _make_segment_in_redis(redis_client, "quorin_test_seg_b", fake_pid)
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
     with (
-        patch("pyforge.watchdog.psutil.Process") as mock_process,
-        patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink,
+        patch("quorin.watchdog.psutil.Process") as mock_process,
+        patch("quorin.watchdog.posix_shm.unlink") as mock_unlink,
     ):
         mock_proc_instance = MagicMock()
         # Different create_time: 999 ns vs stored 100 ns.
@@ -208,7 +208,7 @@ def test_heartbeat_unchanged_psutil_alive_different_create_time_declares_dead(
     assert fake_pid in result.dead_pids
     assert result.segments_unlinked_dead == 1
     assert result.segments_unlinked_drain == 1
-    mock_unlink.assert_called_once_with("pyforge_test_seg_b")
+    mock_unlink.assert_called_once_with("quorin_test_seg_b")
 
 
 # ---------------------------------------------------------------------------
@@ -223,11 +223,11 @@ def test_psutil_access_denied_does_not_declare_dead(
     conservative — do NOT declare dead. Counter increments.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
-    with patch("pyforge.watchdog.psutil.Process") as mock_process:
+    with patch("quorin.watchdog.psutil.Process") as mock_process:
         mock_process.side_effect = psutil.AccessDenied(fake_pid)
         result = state.run_one_tick()
 
@@ -244,11 +244,11 @@ def test_psutil_zombie_process_does_not_declare_dead(
     do NOT declare dead. Counter increments under the 'zombie' reason.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
-    with patch("pyforge.watchdog.psutil.Process") as mock_process:
+    with patch("quorin.watchdog.psutil.Process") as mock_process:
         mock_process.side_effect = psutil.ZombieProcess(fake_pid)
         result = state.run_one_tick()
 
@@ -268,12 +268,12 @@ def test_heartbeat_backward_jump_resets_miss_count(
     miss_count + updates last_seen. NOT declared dead.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 5000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 5000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = 1
 
     # Backward jump (wall went from 5000 -> 3000)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 3000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 3000))
     state.run_one_tick()
 
     assert state._tracked[fake_pid].miss_count == 0
@@ -287,8 +287,8 @@ def test_malformed_heartbeat_value_skipped_with_counter(
     incremented + skipped. Tick proceeds with valid entries.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), b"garbage_no_colon")
-    redis_client.hset("pyforge:heartbeats", str(fake_pid + 1), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), b"garbage_no_colon")
+    redis_client.hset("quorin:heartbeats", str(fake_pid + 1), _heartbeat_value(100, 1000))
 
     result = state.run_one_tick()
 
@@ -302,7 +302,7 @@ def test_malformed_heartbeat_value_skipped_with_counter(
 def test_malformed_heartbeat_only_one_component(redis_client: redis.Redis, fake_pid: int) -> None:
     """Heartbeat value missing the ``:`` separator is malformed."""
     state = WatchdogState(redis_client)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), b"only_one")
+    redis_client.hset("quorin:heartbeats", str(fake_pid), b"only_one")
 
     result = state.run_one_tick()
 
@@ -320,15 +320,15 @@ def test_cleanup_queue_drain_unlinks_each(redis_client: redis.Redis) -> None:
     posix_shm.unlinks each.
     """
     state = WatchdogState(redis_client, batch_drain_size=10)
-    redis_client.sadd("pyforge:cleanup_queue", "pyforge_q_a", "pyforge_q_b")
+    redis_client.sadd("quorin:cleanup_queue", "quorin_q_a", "quorin_q_b")
 
-    with patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink:
+    with patch("quorin.watchdog.posix_shm.unlink") as mock_unlink:
         result = state.run_one_tick()
 
     assert result.segments_unlinked_drain == 2
     # Set behavior: SPOP is non-deterministic, but both names must be unlinked.
     unlinked = {call.args[0] for call in mock_unlink.call_args_list}
-    assert unlinked == {"pyforge_q_a", "pyforge_q_b"}
+    assert unlinked == {"quorin_q_a", "quorin_q_b"}
 
 
 def test_cleanup_queue_drain_handles_filenotfound(redis_client: redis.Redis) -> None:
@@ -337,9 +337,9 @@ def test_cleanup_queue_drain_handles_filenotfound(redis_client: redis.Redis) -> 
     or test fixture). Loop continues.
     """
     state = WatchdogState(redis_client, batch_drain_size=10)
-    redis_client.sadd("pyforge:cleanup_queue", "pyforge_q_a", "pyforge_q_b")
+    redis_client.sadd("quorin:cleanup_queue", "quorin_q_a", "quorin_q_b")
 
-    with patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink:
+    with patch("quorin.watchdog.posix_shm.unlink") as mock_unlink:
         # First call raises FileNotFoundError; second succeeds.
         mock_unlink.side_effect = [FileNotFoundError(), None]
         result = state.run_one_tick()
@@ -357,9 +357,9 @@ def test_cleanup_queue_drain_propagates_other_oserror(
     PermissionError) propagates. Operator must see this.
     """
     state = WatchdogState(redis_client, batch_drain_size=10)
-    redis_client.sadd("pyforge:cleanup_queue", "pyforge_q_a")
+    redis_client.sadd("quorin:cleanup_queue", "quorin_q_a")
 
-    with patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink:
+    with patch("quorin.watchdog.posix_shm.unlink") as mock_unlink:
         mock_unlink.side_effect = PermissionError(13, "Permission denied")
         with pytest.raises(PermissionError):
             state.run_one_tick()
@@ -380,7 +380,7 @@ def test_self_pid_never_declared_dead(redis_client: redis.Redis) -> None:
     state = WatchdogState(redis_client)
     # Force a stale heartbeat for self_pid.
     redis_client.hset(
-        "pyforge:heartbeats",
+        "quorin:heartbeats",
         str(state._self_pid),
         _heartbeat_value(123, 456),
     )
@@ -405,11 +405,11 @@ def test_tracked_prunes_pids_no_longer_in_heartbeat_hash(
     a tracked entry stranded; step 5 prunes it next tick.
     """
     state = WatchdogState(redis_client)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     assert fake_pid in state._tracked
 
-    redis_client.hdel("pyforge:heartbeats", str(fake_pid))
+    redis_client.hdel("quorin:heartbeats", str(fake_pid))
     state.run_one_tick()
     assert fake_pid not in state._tracked
 
@@ -425,7 +425,7 @@ def test_watchdog_state_construction_calls_heartbeat_ensure_started(
     """POLISH-Rev3 #12: ensure_started moved to __init__; called once
     at construction, not per-tick.
     """
-    with patch("pyforge.watchdog.heartbeat.ensure_started") as mock_ensure:
+    with patch("quorin.watchdog.heartbeat.ensure_started") as mock_ensure:
         WatchdogState(redis_client)
 
     mock_ensure.assert_called_once()
@@ -456,8 +456,8 @@ def test_pid_reuse_race_aborts_cleanup_via_lua_guard(
     """
     state = WatchdogState(redis_client)
     # B's state — segment refcounted, pid_segments populated, sidetable.
-    _make_segment_in_redis(redis_client, "pyforge_test_seg_b_alive", fake_pid)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(999, 9999))
+    _make_segment_in_redis(redis_client, "quorin_test_seg_b_alive", fake_pid)
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(999, 9999))
 
     # Watchdog's _tracked thinks A's create_time was 100.
     expected_create_time_ns_for_a = 100
@@ -466,10 +466,10 @@ def test_pid_reuse_race_aborts_cleanup_via_lua_guard(
     returned = int(
         state._cleanup_lua(
             keys=[
-                f"pyforge:pid_segments:{fake_pid}",
-                "pyforge:heartbeats",
-                "pyforge:cleanup_queue",
-                "pyforge:segment_to_schema",
+                f"quorin:pid_segments:{fake_pid}",
+                "quorin:heartbeats",
+                "quorin:cleanup_queue",
+                "quorin:segment_to_schema",
             ],
             args=[str(fake_pid), str(expected_create_time_ns_for_a)],
         )
@@ -478,13 +478,13 @@ def test_pid_reuse_race_aborts_cleanup_via_lua_guard(
     # PID-reuse detected → -1 sentinel.
     assert returned == -1
     # B's state preserved across the abort.
-    assert redis_client.exists("pyforge:refcount:pyforge_test_seg_b_alive")
-    assert redis_client.hexists("pyforge:segment_to_schema", "pyforge_test_seg_b_alive")
-    assert redis_client.exists("pyforge:schema:_FakeSchema:current")
+    assert redis_client.exists("quorin:refcount:quorin_test_seg_b_alive")
+    assert redis_client.hexists("quorin:segment_to_schema", "quorin_test_seg_b_alive")
+    assert redis_client.exists("quorin:schema:_FakeSchema:current")
     # Cleanup queue not populated by aborted Lua.
-    assert not redis_client.sismember("pyforge:cleanup_queue", "pyforge_test_seg_b_alive")
+    assert not redis_client.sismember("quorin:cleanup_queue", "quorin_test_seg_b_alive")
     # heartbeats entry preserved.
-    assert redis_client.hexists("pyforge:heartbeats", str(fake_pid))
+    assert redis_client.hexists("quorin:heartbeats", str(fake_pid))
 
 
 def test_pid_reuse_guard_falls_through_when_heartbeats_absent(
@@ -496,17 +496,17 @@ def test_pid_reuse_guard_falls_through_when_heartbeats_absent(
     force-first-refresh failure, ~3e-9 probability per dead PID.
     """
     state = WatchdogState(redis_client)
-    _make_segment_in_redis(redis_client, "pyforge_residual_a", fake_pid)
+    _make_segment_in_redis(redis_client, "quorin_residual_a", fake_pid)
     # NO heartbeats[pid] entry — A's atexit HDEL'd before any reuse.
-    assert not redis_client.hexists("pyforge:heartbeats", str(fake_pid))
+    assert not redis_client.hexists("quorin:heartbeats", str(fake_pid))
 
     returned = int(
         state._cleanup_lua(
             keys=[
-                f"pyforge:pid_segments:{fake_pid}",
-                "pyforge:heartbeats",
-                "pyforge:cleanup_queue",
-                "pyforge:segment_to_schema",
+                f"quorin:pid_segments:{fake_pid}",
+                "quorin:heartbeats",
+                "quorin:cleanup_queue",
+                "quorin:segment_to_schema",
             ],
             args=[str(fake_pid), "100"],
         )
@@ -514,7 +514,7 @@ def test_pid_reuse_guard_falls_through_when_heartbeats_absent(
 
     # Cleanup proceeded (residual risk path).
     assert returned == 1
-    assert redis_client.sismember("pyforge:cleanup_queue", "pyforge_residual_a")
+    assert redis_client.sismember("quorin:cleanup_queue", "quorin_residual_a")
 
 
 # ---------------------------------------------------------------------------
@@ -547,14 +547,14 @@ def test_dead_pid_cleanup_queues_segment_then_drain_unlinks(
     ``segments_unlinked_drain`` is what step 4 actually unlinked.
     """
     state = WatchdogState(redis_client, miss_threshold=2)
-    _make_segment_in_redis(redis_client, "pyforge_combined_a", fake_pid)
-    redis_client.hset("pyforge:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
+    _make_segment_in_redis(redis_client, "quorin_combined_a", fake_pid)
+    redis_client.hset("quorin:heartbeats", str(fake_pid), _heartbeat_value(100, 1000))
     state.run_one_tick()
     state._tracked[fake_pid].miss_count = state._miss_threshold
 
     with (
-        patch("pyforge.watchdog.psutil.Process") as mock_process,
-        patch("pyforge.watchdog.posix_shm.unlink") as mock_unlink,
+        patch("quorin.watchdog.psutil.Process") as mock_process,
+        patch("quorin.watchdog.posix_shm.unlink") as mock_unlink,
     ):
         mock_process.side_effect = psutil.NoSuchProcess(fake_pid)
         result = state.run_one_tick()
@@ -563,4 +563,4 @@ def test_dead_pid_cleanup_queues_segment_then_drain_unlinks(
     assert result.segments_unlinked_dead == 1
     # Step-4 drain unlinked exactly that 1 segment.
     assert result.segments_unlinked_drain == 1
-    mock_unlink.assert_called_once_with("pyforge_combined_a")
+    mock_unlink.assert_called_once_with("quorin_combined_a")

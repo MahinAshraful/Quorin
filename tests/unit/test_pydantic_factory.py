@@ -1,4 +1,4 @@
-"""Unit tests for pyforge._internal.pydantic_factory."""
+"""Unit tests for quorin._internal.pydantic_factory."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import numpy as np
 import pydantic
 import pytest
 
-from pyforge._internal.pydantic_factory import (
+from quorin._internal.pydantic_factory import (
     _MODEL_CACHE,
     _build,
     clear_cache,
     field_order_for,
     pydantic_model_for,
 )
-from pyforge.schema import (
+from quorin.schema import (
     FeatureField,
     FeatureSchema,
     _hash_name,

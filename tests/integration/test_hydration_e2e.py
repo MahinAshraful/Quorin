@@ -1,4 +1,4 @@
-"""End-to-end integration tests for pyforge.hydration.hydrate (Step 13 Commit B).
+"""End-to-end integration tests for quorin.hydration.hydrate (Step 13 Commit B).
 
 7 tests covering the full producer -> consumer -> ParquetDatasetStore ->
 ``hydrate()`` -> new segment pipeline against real Redis.
@@ -39,24 +39,24 @@ import redis  # noqa: E402
 import redis.asyncio  # noqa: E402
 from _watchdog_helpers import drain_cleanup_queue  # noqa: E402
 
-from pyforge._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
-from pyforge._internal.pydantic_factory import (  # noqa: E402
+from quorin._internal.arrow_schema import clear_cache as clear_arrow_cache  # noqa: E402
+from quorin._internal.pydantic_factory import (  # noqa: E402
     clear_cache as clear_pydantic_cache,
 )
-from pyforge._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
-from pyforge.hydration import (  # noqa: E402
+from quorin._internal.row_pack import clear_cache as clear_row_pack_cache  # noqa: E402
+from quorin.hydration import (  # noqa: E402
     HydrationConflictError,
     hydrate,
 )
-from pyforge.layout import lookup  # noqa: E402
-from pyforge.offline import ParquetDatasetStore  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import (  # noqa: E402
+from quorin.layout import lookup  # noqa: E402
+from quorin.offline import ParquetDatasetStore  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import (  # noqa: E402
     SegmentNotFoundError,
     SegmentRegistry,
 )
-from pyforge.wal import DEFAULT_STREAM_KEY, PROCESSED_KEY_PREFIX, WALProducer  # noqa: E402
-from pyforge.wal_consumer import KEY_WAL_CONSUMER_LIVENESS, WALConsumer  # noqa: E402
+from quorin.wal import DEFAULT_STREAM_KEY, PROCESSED_KEY_PREFIX, WALProducer  # noqa: E402
+from quorin.wal_consumer import KEY_WAL_CONSUMER_LIVENESS, WALConsumer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test schema. Top-level for picklability + reuse across tests.
@@ -83,7 +83,7 @@ def _values(i: int) -> dict[str, object]:
 def _pending_count(redis_client: redis.Redis) -> int:
     """Mirrors test_offline_e2e.py:_pending_count."""
     try:
-        info = redis_client.xpending(DEFAULT_STREAM_KEY, "pyforge_consumers")
+        info = redis_client.xpending(DEFAULT_STREAM_KEY, "quorin_consumers")
     except redis.exceptions.ResponseError as e:
         if "NOGROUP" in str(e):
             return -1
@@ -96,7 +96,7 @@ async def _wait_for_msg_processed(
     msg_id: bytes,
     deadline_seconds: float = 5.0,
 ) -> None:
-    """Poll for ``pyforge:processed:{msg_id}`` — set by consumer after apply.
+    """Poll for ``quorin:processed:{msg_id}`` — set by consumer after apply.
 
     Deterministic "all applied through msg_id" signal. The consumer
     SETs this side-table key immediately after ``layout.insert``
@@ -178,7 +178,7 @@ async def async_redis(redis_client: redis.Redis):
     async one is built — mirrors test_offline_e2e.py's pattern.
     """
     del redis_client
-    url = os.environ.get("PYFORGE_REDIS_URL", "redis://127.0.0.1:6379/0")
+    url = os.environ.get("QUORIN_REDIS_URL", "redis://127.0.0.1:6379/0")
     client = redis.asyncio.Redis.from_url(url, decode_responses=False)
     try:
         await client.ping()
@@ -199,7 +199,7 @@ def _drop_current(
     """Operator simulation: drop the current segment so a fresh hydrate runs.
 
     This is the "operator wants to re-hydrate" path. The Step 14 close-Lua
-    extension clears ``pyforge:schema:{name}:current`` automatically when
+    extension clears ``quorin:schema:{name}:current`` automatically when
     the closing process is the last holder (refcount-0 path) — this
     eliminates the workaround for the **producer-consumer pipeline**
     cleanup (close + drain after the pipeline already drove refcount to 0).
@@ -217,7 +217,7 @@ def _drop_current(
     Operator runbook (ADR-013) — for unattended workflows, this is what
     the watchdog will do over its 150 s detection ceiling once the
     operator's hydrate process exits. For attended workflows, the
-    operator uses ``redis-cli DEL pyforge:schema:X:current`` directly
+    operator uses ``redis-cli DEL quorin:schema:X:current`` directly
     after confirming no live serving consumers — same shape as the
     explicit DEL below.
     """
@@ -226,7 +226,7 @@ def _drop_current(
         registry.close(seg)
     drain_cleanup_queue(redis_client)
     # Operator-style DEL for hydrate's ghost-hold refcount=1.
-    redis_client.delete(f"pyforge:schema:{schema.__name__}:current")
+    redis_client.delete(f"quorin:schema:{schema.__name__}:current")
 
 
 async def _run_producer_consumer_pipeline(
@@ -283,7 +283,7 @@ async def _run_producer_consumer_pipeline(
         registry.close(seg)
         drain_cleanup_queue(redis_client)
         # Step 14: registry.close's extended Lua now clears
-        # pyforge:schema:_IntHydrate:current at refcount-0 (rotation-safe).
+        # quorin:schema:_IntHydrate:current at refcount-0 (rotation-safe).
         # The historical manual `redis_client.delete(_key_current(...))`
         # workaround is gone.
 
@@ -361,7 +361,7 @@ async def test_e2_hydrate_count_matches_parquet_row_count_not_producer_count(
     try:
         producer = WALProducer(redis_client)
         # batch_count=10 — default 100 would let one iter grab everything,
-        # defeating the partial-state goal. Verified at pyforge/wal_consumer.py:287.
+        # defeating the partial-state goal. Verified at quorin/wal_consumer.py:287.
         consumer = WALConsumer(
             async_redis,  # type: ignore[arg-type]
             segments={"_IntHydrate": seg},
@@ -461,7 +461,7 @@ async def test_e3_hydrate_refuses_when_consumer_alive_real_redis(
 
             # Drop the registry's current pointer so precondition #1
             # passes; we want to hit precondition #2.
-            redis_client.delete("pyforge:schema:_IntHydrate:current")
+            redis_client.delete("quorin:schema:_IntHydrate:current")
 
             with pytest.raises(HydrationConflictError, match="WAL consumer"):
                 hydrate(_IntHydrate, parquet_store, registry, redis_client=redis_client)
@@ -581,7 +581,7 @@ async def test_e5_hydrate_as_of_time_excludes_future_writes(
             # NOTE: with flush_interval_seconds=300 we cannot use
             # _drain_consumer (which waits for pending_ack=[] — only
             # cleared by the consumer's flush task). _wait_for_msg_processed
-            # is sufficient: by the time pyforge:processed:{msg_id} is
+            # is sufficient: by the time quorin:processed:{msg_id} is
             # set, the apply order has run layout.insert + offline.append,
             # so the row is already buffered in parquet_store. The explicit
             # flush() then writes it. The pending_ack staying non-empty is

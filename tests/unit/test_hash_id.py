@@ -1,4 +1,4 @@
-"""Tests for ``pyforge._internal.hash_id``.
+"""Tests for ``quorin._internal.hash_id``.
 
 The pinned-hash regression test (asserting literal blake2b output for known
 strings) lives at ``tests/unit/test_layout.py::TestHashPinned::test_known_pinned_hashes``;
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pyforge._internal.hash_id import hash_entity_id, hash_entity_id_bytes
+from quorin._internal.hash_id import hash_entity_id, hash_entity_id_bytes
 
 
 class TestHashEntityIdBytesParity:

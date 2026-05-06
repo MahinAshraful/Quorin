@@ -1,4 +1,4 @@
-"""End-to-end integration tests for pyforge._internal.lookup_kernel.lookup_jit.
+"""End-to-end integration tests for quorin._internal.lookup_kernel.lookup_jit.
 
 Goes through the real ``SegmentRegistry`` path (not the bare ``make_segment``
 helper used in unit tests). Verifies that lookup_jit works against a
@@ -25,10 +25,10 @@ pytestmark = [
     ),
 ]
 
-from pyforge._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
-from pyforge.layout import insert, lookup  # noqa: E402
-from pyforge.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
-from pyforge.shm import SegmentRegistry  # noqa: E402
+from quorin._internal.lookup_kernel import lookup_jit, prewarm  # noqa: E402
+from quorin.layout import insert, lookup  # noqa: E402
+from quorin.schema import FeatureField, FeatureSchema, dtype  # noqa: E402
+from quorin.shm import SegmentRegistry  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)

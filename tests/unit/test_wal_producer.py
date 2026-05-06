@@ -1,4 +1,4 @@
-"""Unit tests for pyforge.wal.WALProducer.
+"""Unit tests for quorin.wal.WALProducer.
 
 These tests use a local in-memory FakeRedis stub to exercise the producer
 without requiring the integration Redis service. The integration suite at
@@ -18,9 +18,9 @@ import numpy as np
 import pydantic
 import pytest
 
-from pyforge._internal.pydantic_factory import clear_cache, field_order_for
-from pyforge.schema import FeatureField, FeatureSchema, dtype
-from pyforge.wal import (
+from quorin._internal.pydantic_factory import clear_cache, field_order_for
+from quorin.schema import FeatureField, FeatureSchema, dtype
+from quorin.wal import (
     _F_BLOB,
     _F_ENTITY_ID,
     _F_EVENT_TIME,

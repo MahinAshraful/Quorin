@@ -1,4 +1,4 @@
-"""Parity tests: pyforge.serving.assemble (Python) vs pyforge.assembly.assemble (Numba).
+"""Parity tests: quorin.serving.assemble (Python) vs quorin.assembly.assemble (Numba).
 
 THE Step 5 test. Hypothesis-driven over random schemas + random row data.
 The two implementations must produce **byte-identical output** —
@@ -28,11 +28,11 @@ from _helpers import (  # noqa: E402
     random_value_for,
     release_segment,
 )
-from pyforge.assembly import assemble as assemble_numba  # noqa: E402
-from pyforge.assembly import prewarm  # noqa: E402
-from pyforge.layout import insert  # noqa: E402
-from pyforge.schema import DType, FeatureField  # noqa: E402
-from pyforge.serving import assemble as assemble_python  # noqa: E402
+from quorin.assembly import assemble as assemble_numba  # noqa: E402
+from quorin.assembly import prewarm  # noqa: E402
+from quorin.layout import insert  # noqa: E402
+from quorin.schema import DType, FeatureField  # noqa: E402
+from quorin.serving import assemble as assemble_python  # noqa: E402
 
 _HYPO = settings(
     max_examples=200,
