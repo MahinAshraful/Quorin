@@ -6,7 +6,7 @@
 
 ## Decision
 
-Pyforge ships [`pyforge.offline.ParquetDatasetStore.read_point_in_time`](../../pyforge/offline.py),
+Quorin ships [`quorin.offline.ParquetDatasetStore.read_point_in_time`](../../quorin/offline.py),
 a sync method that returns one feature row per query row, with feature
 columns null where no feature satisfies BOTH:
 
@@ -177,7 +177,7 @@ materialization is mandatory in PyArrow 14. **The sort copy in
 `_asof_join` doubles peak memory during the asof phase** — at 1M
 filtered rows × 200 fields, peak ≈ 2.4 GB. Operators at 90+ days at
 200 fields shard by entity_id (`hash(eid) mod N` per CLAUDE.md §1)
-across multiple Pyforge instances or multiple read calls.
+across multiple Quorin instances or multiple read calls.
 
 Streaming asof (per-partition iteration + per-batch dedup and join)
 deferred to v2. Significant complexity; no caller asking yet.
@@ -310,7 +310,7 @@ copies of feature columns project after the read.
 
 - **`distinct_entity_ids(schema)` helper** — Step 13 hydration owns
   this with full hydration context.
-- **`pyforge.wal.make_clients(url)`** — Step 17 public API
+- **`quorin.wal.make_clients(url)`** — Step 17 public API
   consolidation.
 - **Pydantic factory promotion to public namespace** — Step 17.
 - **Column projection (`columns=` parameter)** — v2 enhancement; v1

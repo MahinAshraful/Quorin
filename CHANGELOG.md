@@ -31,17 +31,13 @@ warm-cache 4-field assemble path.
 - Requires Redis 7.2+ on the control path. The hot read path never touches
   Redis (per [ADR-002](docs/adr/002-per-open-refcounting.md)).
 
-### Project history note
+### Note on planning artifacts
 
-Quorin's internal-development codename was **Pyforge**. The ADR archive
-(`docs/adr/`), CLAUDE.md, and gitignored `progress/` journal continue to
-refer to the codebase by the codename for historical continuity. The
-published package is `quorin`. Functionally identical.
-
-The pre-implementation `pyforge_project_spec.md` and `pyforge_build_steps.md`
-planning artifacts were deleted at v0.1.0; their value-prop content lives in
-the README, and their design-decision content lives in the ADRs (which are
-the canonical record). Git history preserves both files for archeology.
+Pre-implementation planning documents were consolidated into the ADR
+archive at v0.1.0. The canonical record of every load-bearing design
+decision lives in `docs/adr/` (17 numbered ADRs, one per decision); the
+value-proposition content is in the README. Git history preserves the
+original planning artifacts.
 
 ### Acknowledgments
 

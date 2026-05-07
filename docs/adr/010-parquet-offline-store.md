@@ -6,7 +6,7 @@
 
 ## Decision
 
-Pyforge ships [`pyforge.offline.ParquetDatasetStore`](../../pyforge/offline.py),
+Quorin ships [`quorin.offline.ParquetDatasetStore`](../../quorin/offline.py),
 an async `OfflineWriter` (per ADR-009's Protocol) that persists every
 WAL message to a hive-partitioned Parquet dataset on local disk. Each
 `flush()` call writes one file per `(schema, event_date)` bucket via
@@ -89,7 +89,7 @@ silently OR every column loses dict encoding.
 No pre-flush dedup; no in-memory hash set. The write path is throughput-
 critical (10k/sec steady, 50k/sec peak target); spending cycles on
 dedup at write time is the wrong place. Step 12's
-`pyforge.offline.read(...)` provides dedup-on-`msg_id` at read time —
+`quorin.offline.read(...)` provides dedup-on-`msg_id` at read time —
 reads are user-driven and can absorb the millisecond.
 
 ## 3. File-per-flush, hive-style partitioning
@@ -110,12 +110,12 @@ is self-documenting — DuckDB / Spark / Trino / pyarrow.dataset read it
 natively without configuration; (b) Step 12's reader pseudocode in
 the build plan uses `partitioning="hive"`, so this resolves an
 internal inconsistency in the build plan (Step 11's pseudocode had
-positional). Operationally identical for Pyforge's own reader; better
+positional). Operationally identical for Quorin's own reader; better
 for ad-hoc DuckDB queries against the dataset.
 
 ## 4. Atomic write via tmp + fsync + rename + parent-dir fsync
 
-Sequence in [`_write_table`](../../pyforge/offline.py):
+Sequence in [`_write_table`](../../quorin/offline.py):
 
 1. `pq.write_table(table, _tmp/{uuid}.parquet, ...)`.
 2. `tmp_path.stat().st_size` — record bytes for
@@ -352,7 +352,7 @@ tradeoff.
 - **Read path** (`pa.dataset` + `asof_join` + dedup-on-msg_id) — Step 12.
 - **Hydration** — cold-start backfill from Parquet into shm — Step 13.
 - **Periodic compaction** of small files — operator-owned for v1; see §9.
-- **Multi-stream sharding** (`pyforge:wal:{i}`) — deployment-layer; future.
+- **Multi-stream sharding** (`quorin:wal:{i}`) — deployment-layer; future.
 - **S3 / object-storage backend** — `pathlib.Path` is local-FS-only by design.
 - **Per-column dictionary tuning for non-msg_id columns** — let PyArrow
   default hold; revisit if Step 16 flamegraphs identify it. (msg_id
@@ -378,7 +378,7 @@ tradeoff.
   the same `schema={name}/` partition tree. Reader handles
   migration; writer just writes its current schema's columns.
 - File-count growth at 525k/year/schema is operator-monitored, not
-  pyforge-managed. v1 ships no compaction.
+  quorin-managed. v1 ships no compaction.
 - The latency-spike-per-flush baseline (~100-200 ms) is documented
   for downstream alerting setup. Operators alert on >1s, not on
   the baseline.

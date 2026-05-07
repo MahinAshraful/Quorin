@@ -6,15 +6,15 @@
 
 ## Decision
 
-Pyforge ships **two** assembly implementations: the pure-Python oracle
-`pyforge.serving.assemble` (Step 4) and the Numba-compiled
-`pyforge.assembly.assemble` (Step 5). They produce **byte-identical output**,
+Quorin ships **two** assembly implementations: the pure-Python oracle
+`quorin.serving.assemble` (Step 4) and the Numba-compiled
+`quorin.assembly.assemble` (Step 5). They produce **byte-identical output**,
 verified by `tests/property/test_assembly_parity.py` over 200 Hypothesis-
 generated random schemas. Adoption of the Numba path as the production default
 is **gated on the 200-field benchmark showing ≥3× speedup** over the Python
 baseline; this ADR records the measured ratio. Either way, no Step-5
-public-API change — users explicitly select by import (`from pyforge.serving
-import assemble` for Python, `from pyforge.assembly import assemble` for
+public-API change — users explicitly select by import (`from quorin.serving
+import assemble` for Python, `from quorin.assembly import assemble` for
 Numba). Step 12 wires the unified production entry once benchmark numbers
 across the build are stable.
 
@@ -31,16 +31,16 @@ more than it saves. Above that, Numba dominates: a 200-field schema with one
 per-iteration overhead compounds.
 
 The cost of carrying both paths is one extra ~100-line module
-(`pyforge/assembly.py`), one parity test, and a 5-line ADR — finite and bounded.
+(`quorin/assembly.py`), one parity test, and a 5-line ADR — finite and bounded.
 The cost of carrying *only* Numba and discovering that small-schema latency
 got worse is a cross-step bug hunt and an unwind. Both paths is the cheap
 insurance, and the parity test ensures they cannot silently diverge.
 
 ## The design
 
-- **`pyforge/assembly.py` is isolated.** `pyforge.serving` does not import it,
-  so `import pyforge.serving` does not pay Numba's ~200 ms LLVM init or
-  compilation cost. Only callers that explicitly `import pyforge.assembly`
+- **`quorin/assembly.py` is isolated.** `quorin.serving` does not import it,
+  so `import quorin.serving` does not pay Numba's ~200 ms LLVM init or
+  compilation cost. Only callers that explicitly `import quorin.assembly`
   trigger the toolchain.
 - **Single uint8 segment view + Numba `.view(dtype)` per field.** One
   `np.frombuffer(seg.handle.buf, dtype=np.uint8)` per assemble call. Inside
@@ -65,13 +65,13 @@ insurance, and the parity test ensures they cannot silently diverge.
   oracle. Any divergence (silent type promotion, ordering bug, NaN
   mishandling) fails the build immediately.
 - **Positive:** Python users who don't want a Numba dependency at runtime can
-  use `pyforge.serving.assemble` exclusively; Numba never imports.
+  use `quorin.serving.assemble` exclusively; Numba never imports.
 - **Positive:** an honest crossover point can be measured and documented per
   schema. Step 12's public API can dispatch based on schema size, not on
   blind dogma.
 - **Negative:** every reviewer of new assembly code must remember there are
-  two paths. The naming carries the intent (`pyforge.serving` vs
-  `pyforge.assembly`), and the parity test is the safety net.
+  two paths. The naming carries the intent (`quorin.serving` vs
+  `quorin.assembly`), and the parity test is the safety net.
 - **Negative:** `boundscheck=False` in production speed mode hides
   out-of-bounds writes. The parity test (correctness check) doesn't run with
   bounds checking, but the test suite includes a separately-jitted
@@ -81,7 +81,7 @@ insurance, and the parity test ensures they cannot silently diverge.
 
 The build plan targets ≤5 µs p99 for warm 4-field assemble. Step 5's
 threshold is **10 µs (2× headroom)** because Step 5 only Numba-fies assembly,
-not lookup. `pyforge.layout.lookup` remains pure-Python at ~3 µs/call —
+not lookup. `quorin.layout.lookup` remains pure-Python at ~3 µs/call —
 dominating the 4-field budget. Numba-fying lookup is deferred to a later
 step; it would close the gap. For 200-field schemas, lookup overhead is a
 small fraction of total cost and Numba's gains dominate.
@@ -115,14 +115,14 @@ data points worth flagging:
   ~5 ns. Lookup overhead (~3 us Python) dominates at small N; the
   embedding bytes dominate at large N.
 
-Step 12 will wire `pyforge.assembly.assemble` as the default for
-`pyforge.serving.assemble` when the production API stabilizes. Until
+Step 12 will wire `quorin.assembly.assemble` as the default for
+`quorin.serving.assemble` when the production API stabilizes. Until
 then, both paths remain importable and the parity test guards against
 divergence.
 
 ## References
 
-- Pyforge spec, Step 5 section ("⚠️ PLAN CORRECTION: Benchmark gate on
+- Quorin spec, Step 5 section ("⚠️ PLAN CORRECTION: Benchmark gate on
   adoption").
 - Build plan estimate: ~20-field crossover; 4-field 5 µs vs 1 µs (20% gain
   too small); 200-field 400 µs vs 20 µs (20× gain).

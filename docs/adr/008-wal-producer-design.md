@@ -6,16 +6,16 @@
 
 ## Decision
 
-Pyforge ships `pyforge.wal.WALProducer` with two methods:
+Quorin ships `quorin.wal.WALProducer` with two methods:
 
 - `write(schema, entity_id, values, event_time_ns=None) -> bytes` —
   validates `values`, msgpack-packs them as a list in name_hash order,
-  XADDs to `pyforge:wal`, returns the Redis-assigned message ID.
+  XADDs to `quorin:wal`, returns the Redis-assigned message ID.
 - `write_sync(...)` — same as `write` plus polling the consumer's
-  `pyforge:processed:{msg_id}` side table with 1 ms → 10 ms exponential
+  `quorin:processed:{msg_id}` side table with 1 ms → 10 ms exponential
   backoff. Raises `WriteSyncTimeoutError` on deadline expiry.
 
-Validation goes through `pyforge._internal.pydantic_factory.pydantic_model_for(schema)`,
+Validation goes through `quorin._internal.pydantic_factory.pydantic_model_for(schema)`,
 a memoized factory keyed by class identity. NaN and ±Inf are accepted on
 every float field via `Field(allow_inf_nan=True)`. The producer holds a
 single `msgpack.Packer()` instance and per-instance caches for
@@ -38,7 +38,7 @@ Measured on WSL2 Ubuntu / Docker Desktop Redis 7.2-alpine,
 | **`write` p99 wall-clock (200-field)** | <5 ms (hardware-dependent) | — | **~5 ms** |
 | **`write_sync` p99 wall-clock** | <100 ms | **7.07 ms median** | 9.80 ms |
 
-**The XADD floor is the wall-clock budget at p50 — Pyforge adds <120 µs
+**The XADD floor is the wall-clock budget at p50 — Quorin adds <120 µs
 on top.** Pydantic at 16.7 µs on a 200-field schema is **30× under the
 500 µs escape-hatch trigger**; the parking-lot "swap to hand-rolled
 validator" item is solidly closed for this workload.
@@ -115,17 +115,17 @@ Three reasons for the list-not-dict shape:
    tokenization on both sides matters when validate + pack is already
    25–60% of the per-call CPU.
 3. **Name-hash order is already canonical.**
-   `pyforge.schema.compile_schema()` sorts by name_hash; the consumer
+   `quorin.schema.compile_schema()` sorts by name_hash; the consumer
    reproduces the order with the same call. No second source of truth.
 
 `schema.__name__` is the wire identifier for the schema. **Locked
 assumption (this ADR):** schema class names are globally unique within
-a Pyforge deployment. Step 15 (schema evolution) revisits this with
+a Quorin deployment. Step 15 (schema evolution) revisits this with
 versioning if/when needed.
 
 ## Pydantic factory is internal + memoized
 
-`pyforge._internal.pydantic_factory.pydantic_model_for(schema)` is
+`quorin._internal.pydantic_factory.pydantic_model_for(schema)` is
 private (in `_internal/`) for one reason: if pydantic's per-call cost
 ever bites the 10k writes/sec budget — measured threshold is **500 µs
 at 200 fields**, encoded as the `pydantic_validate_200_field` regression
@@ -218,11 +218,11 @@ adds Redis load, overshooting adds latency floor.
   caller's specific schema. Sub-component benchmarks let us localize a
   miss.
 - `WriteSyncTimeoutError` is the only public exception type added. It lives
-  in `pyforge.wal` per the per-module exception convention
-  (`pyforge.shm.SegmentNotFoundError`,
-  `pyforge.layout.CapacityExceededError`,
-  `pyforge.serving.EntityNotFoundError`). Step 12 may consolidate into
-  a `pyforge.exceptions` module if the count crosses ~5; not yet.
+  in `quorin.wal` per the per-module exception convention
+  (`quorin.shm.SegmentNotFoundError`,
+  `quorin.layout.CapacityExceededError`,
+  `quorin.serving.EntityNotFoundError`). Step 12 may consolidate into
+  a `quorin.exceptions` module if the count crosses ~5; not yet.
 - Future flexibility preserved: pydantic can be replaced with a hand-
   rolled validator without breaking any public API; the wire format
   can extend to add a schema-version field by changing the `b"schema"`

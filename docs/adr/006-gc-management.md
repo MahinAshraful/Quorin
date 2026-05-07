@@ -6,8 +6,8 @@
 
 ## Decision
 
-Pyforge ships a process-wide GC management module
-(`pyforge._internal.gc_manager`) where every component is **opt-in** based on
+Quorin ships a process-wide GC management module
+(`quorin._internal.gc_manager`) where every component is **opt-in** based on
 data, not on the build plan's a priori claims. The user-visible API is:
 
 ```python

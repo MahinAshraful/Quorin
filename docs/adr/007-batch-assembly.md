@@ -6,7 +6,7 @@
 
 ## Decision
 
-Pyforge ships `pyforge.assembly.assemble_batch(seg, entity_ids, *, out, found_mask)`
+Quorin ships `quorin.assembly.assemble_batch(seg, entity_ids, *, out, found_mask)`
 returning a `(N, total_element_count)` float32 buffer plus an `(N,)` bool mask.
 Implementation is:
 
@@ -22,7 +22,7 @@ Implementation is:
    non-contiguous and violate `[::1]`) and Numba 0.60's fragile structured-
    field-key support.
 3. **Slot-byte constants are derived from `SLOT_DTYPE.fields` at module load**
-   in `pyforge/layout.py` and pinned via runtime asserts. A future dtype
+   in `quorin/layout.py` and pinned via runtime asserts. A future dtype
    reorder fails at import time, not silently inside a kernel returning
    wrong rows. Hardcoded magic offsets in the kernel are forbidden — the
    failure mode (incorrect row data, no exception) is exactly the kind of
@@ -32,10 +32,10 @@ Implementation is:
    we walk every row anyway.
 5. **Python-side ID prep stays in Python.** Strings + blake2b are not in
    Numba (invariant #5 pins the hash algorithm). The wrapper UTF-8 encodes
-   each ID, blake2b-hashes via `pyforge._internal.hash_id.hash_entity_id`,
+   each ID, blake2b-hashes via `quorin._internal.hash_id.hash_entity_id`,
    and packs query bytes into a padded `(N, max_query_len)` uint8 array
    for the kernel.
-6. **Separate `BatchBufferPool` class** in `pyforge/pool.py`, NOT an
+6. **Separate `BatchBufferPool` class** in `quorin/pool.py`, NOT an
    extension of Step 6's `BufferPool`. Different defaults
    (`max_size=64`, `zero_on_return=False`, `batch_size` required), 2D
    output instead of 1D, different memory-budget shape. Forcing one class
@@ -59,7 +59,7 @@ Implementation is:
    are different beasts.
 10. **`prewarm()` extends to compile both kernels.** Single opt-in entry
     point; callers don't need to know about the kernel split. Module
-    import does not auto-warm (preserves cheap `import pyforge.assembly`).
+    import does not auto-warm (preserves cheap `import quorin.assembly`).
 
 ## Context
 
@@ -229,7 +229,7 @@ only for very large batches where the win is robust. Single-thread machines
 never use it.
 
 **Recommended deployment**: set `NUMBA_NUM_THREADS=4` in the environment
-before importing `pyforge`. With 4 threads:
+before importing `quorin`. With 4 threads:
 - parallel wins at every N >= 32 (best at N=128: 1.61x)
 - 200-field N=1000 batch: ~2327 µs vs 2940 µs serial (1.26x kernel speedup)
 - combined with ~6150 µs single-call comparator: **~2.64x** end-to-end ratio
@@ -267,7 +267,7 @@ the new threshold.
 PEP 703's free-threaded interpreter (Python 3.13+ experimental, 3.14+
 stable) removes the GIL. Numba's parallel mode currently assumes the GIL
 is acquired by the calling thread; behavior under free-threaded CPython
-is unverified. Pyforge's deployment target is 3.12 (pinned in
+is unverified. Quorin's deployment target is 3.12 (pinned in
 `.python-version`), so this is a 2027+ concern. Document and revisit at
 that point — not avoid the optimization now.
 
@@ -322,7 +322,7 @@ just not the headline-paper number.
 
 ## Files affected
 
-- `pyforge/assembly.py` — added `_assemble_batch_core` (serial Numba),
+- `quorin/assembly.py` — added `_assemble_batch_core` (serial Numba),
   `_assemble_batch_core_parallel` (parallel + prange), and `assemble_batch`
   (Python wrapper with ASCII fast-path encode + branched dispatch on
   `PARALLEL_THRESHOLD`). Extended `prewarm()` to compile all three Numba
@@ -332,9 +332,9 @@ just not the headline-paper number.
   patching and tabulates median µs/call across N ∈ {1, 10, 32, 64, 128,
   256, 1000, 10000}. Output committed to
   `benchmarks/results/step8_threshold_sweep.txt`.
-- `pyforge/pool.py` — added `_BatchCheckout` and `BatchBufferPool`
+- `quorin/pool.py` — added `_BatchCheckout` and `BatchBufferPool`
   alongside existing `_Checkout` / `BufferPool`.
-- `pyforge/layout.py` — added `SLOT_BYTES` and four `SLOT_*_OFFSET`
+- `quorin/layout.py` — added `SLOT_BYTES` and four `SLOT_*_OFFSET`
   constants derived from `SLOT_DTYPE.fields`, with runtime asserts
   pinning the values.
 - `tests/unit/test_batch_assembly.py` — 19 unit tests (all 5 dtypes,
@@ -360,12 +360,12 @@ just not the headline-paper number.
 
 ## Consequences
 
-- `pyforge.assembly` now compiles two Numba kernels at import. Cold
+- `quorin.assembly` now compiles two Numba kernels at import. Cold
   compile cost ~600 ms total (was ~300 ms in Step 5); cached after.
-- `pyforge.pool` now exports two pool classes. Public-API consumers
+- `quorin.pool` now exports two pool classes. Public-API consumers
   need to choose `BufferPool` vs `BatchBufferPool` based on shape
   needs.
-- The slot-byte-layout constants in `pyforge.layout` become a public
+- The slot-byte-layout constants in `quorin.layout` become a public
   contract — the kernel reads at fixed offsets, and any future
   `SLOT_DTYPE` reorder must update both the constants and the runtime
   asserts together.

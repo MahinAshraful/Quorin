@@ -6,25 +6,25 @@
 
 ## Decision
 
-Pyforge ships a **Numba-compiled single-entity lookup** at
-`pyforge._internal.lookup_kernel.lookup_jit`, used by
-`pyforge.assembly.assemble` to resolve `entity_id -> row_offset` on the
+Quorin ships a **Numba-compiled single-entity lookup** at
+`quorin._internal.lookup_kernel.lookup_jit`, used by
+`quorin.assembly.assemble` to resolve `entity_id -> row_offset` on the
 serving hot path. The kernel includes a **Numba-compiled BLAKE2b-8** at
-`pyforge._internal.hash_kernel.blake2b_8` — byte-identical to
+`quorin._internal.hash_kernel.blake2b_8` — byte-identical to
 `hashlib.blake2b(input, digest_size=8)` per pinned-hash invariant #5.
-The pure-Python `pyforge.layout.lookup` remains unchanged — it's still
-the canonical reader for `pyforge.serving.assemble` (the Python oracle
+The pure-Python `quorin.layout.lookup` remains unchanged — it's still
+the canonical reader for `quorin.serving.assemble` (the Python oracle
 / parity reference) and any caller that wants to skip Numba init.
 
-The kernel lives in **`pyforge/_internal/lookup_kernel.py`**, NOT in
-`pyforge.layout`, because invariant #11 forbids `pyforge.layout` from
-pulling Numba (it would force every `pyforge.serving` / `pyforge.shm` /
+The kernel lives in **`quorin/_internal/lookup_kernel.py`**, NOT in
+`quorin.layout`, because invariant #11 forbids `quorin.layout` from
+pulling Numba (it would force every `quorin.serving` / `quorin.shm` /
 test importer to pay ~200 ms LLVM init). Mirrors Step 13's
-`pyforge/_internal/insert_kernel.py` precedent (the bulk-insert kernel
+`quorin/_internal/insert_kernel.py` precedent (the bulk-insert kernel
 has the same isolation contract).
 
 Byte-identical-to-Python contract is the load-bearing correctness
-property: `lookup_jit(seg, eid) == pyforge.layout.lookup(seg, eid)` for
+property: `lookup_jit(seg, eid) == quorin.layout.lookup(seg, eid)` for
 any segment state. Verified by
 `tests/property/test_lookup_jit_parity.py` (200 Hypothesis examples per
 property, hit + miss paths) and by transitive coverage from
@@ -60,7 +60,7 @@ surface it as the next bottleneck.
 ## The design
 
 - **Kernel signature: 13 scalar args + 3 array args.** Mirrors
-  `pyforge.assembly._assemble_batch_core`'s probe-loop shape — same
+  `quorin.assembly._assemble_batch_core`'s probe-loop shape — same
   byte-compare disambiguation, same EMPTY-slot stop condition, same
   `slot_capacity`-bounded probe budget. Slot byte offsets passed as
   `int64` scalar args (invariant #15 — no magic offsets in Numba kernels).
@@ -71,7 +71,7 @@ surface it as the next bottleneck.
   `insert_kernel`'s sentinel-return convention.
 
 - **`fastmath=False`** (invariant #12). Lookup does no FP arithmetic, but
-  the discipline is uniform across all Pyforge Numba kernels.
+  the discipline is uniform across all Quorin Numba kernels.
 
 - **`cache=True`** writes compiled artifact to `__pycache__/`. Subsequent
   process starts skip the ~100-200 ms compile. Same as `_assemble_core`.
@@ -87,8 +87,8 @@ surface it as the next bottleneck.
   5. Kernel invocation.
   6. -1 → None translation.
 
-- **Prewarm extension.** `pyforge.assembly.prewarm()` calls
-  `pyforge._internal.lookup_kernel.prewarm()` first so a single
+- **Prewarm extension.** `quorin.assembly.prewarm()` calls
+  `quorin._internal.lookup_kernel.prewarm()` first so a single
   prewarm covers all assembly + lookup kernels. Module load doesn't
   auto-warm — opt-in only.
 
@@ -102,10 +102,10 @@ surface it as the next bottleneck.
 
 - **Positive:** Module-level isolation preserves invariant #11. The
   module-hygiene test (`tests/unit/test_module_hygiene.py`) confirms
-  `pyforge.serving`, `pyforge.layout`, `pyforge.metrics`, etc. don't pull
-  Numba via `pyforge._internal.lookup_kernel`. Adding lookup_kernel to
-  the test's "legitimate Numba" exclusion list (alongside `pyforge.assembly`
-  and `pyforge._internal.insert_kernel`) keeps the contract honest.
+  `quorin.serving`, `quorin.layout`, `quorin.metrics`, etc. don't pull
+  Numba via `quorin._internal.lookup_kernel`. Adding lookup_kernel to
+  the test's "legitimate Numba" exclusion list (alongside `quorin.assembly`
+  and `quorin._internal.insert_kernel`) keeps the contract honest.
 
 - **Positive:** ~1 µs saved per assemble call at the 4-field warm path.
   Projected median: 4.2 µs → ~3.0 µs. Projected p99: 9.24 µs → ~6.5-7.0 µs.
@@ -120,15 +120,15 @@ surface it as the next bottleneck.
   would expand surface 3-4× and delay trip-wire resolution. Those are
   Step 17 (or a hypothetical "Step 16d") deferrals.
 
-- **Negative:** every reviewer of `pyforge.assembly.assemble` must
-  remember it now calls into `pyforge._internal.lookup_kernel`, not
-  `pyforge.layout.lookup`. The naming carries the intent
+- **Negative:** every reviewer of `quorin.assembly.assemble` must
+  remember it now calls into `quorin._internal.lookup_kernel`, not
+  `quorin.layout.lookup`. The naming carries the intent
   (`_internal.lookup_kernel`) and the parity test is the safety net.
 
 ## The byte-identical contract
 
 `lookup_jit(seg, eid)` returns the same `row_offset` (or `None`) as
-`pyforge.layout.lookup(seg, eid)` for any:
+`quorin.layout.lookup(seg, eid)` for any:
 
 - valid `entity_id` string (UTF-8 encodable, non-empty, any length);
 - segment state (empty, partially populated, capacity-cap-at-50%);
@@ -211,7 +211,7 @@ and ratifies the trip-wire GREEN/RED verdict.
 `hashlib.blake2b(s, digest_size=8)` Python: ~1500 ns per call (measured
 via decomposition; the per-call cost dominates pure-Python lookup hits).
 
-`pyforge._internal.hash_kernel.blake2b_8` Numba: ~150-300 ns per call
+`quorin._internal.hash_kernel.blake2b_8` Numba: ~150-300 ns per call
 in-kernel context (the Numba dispatch overhead is amortized inside
 `_lookup_core` since BLAKE2b is called from inside another @njit
 function — no Python boundary).
@@ -230,7 +230,7 @@ re-implemented from RFC 7693, NOT changed.
 ## References
 
 - ADR-004: Numba assembly is gated on a per-schema benchmark threshold
-  (precedent: `pyforge.serving` vs `pyforge.assembly` dual-path shape).
+  (precedent: `quorin.serving` vs `quorin.assembly` dual-path shape).
 - ADR-007: Batch assembly (precedent for `_assemble_batch_core`'s probe
   loop, which lookup_jit's kernel mirrors byte-for-byte).
 - ADR-015 §7 / §11: native-CI venue limitations, bare-metal extrapolation,

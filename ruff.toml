@@ -36,9 +36,9 @@ ignore = [
 # `_helpers` lives in tests/_helpers.py and is importable thanks to
 # pythonpath = ["tests"] in pyproject.toml. Without this, ruff classifies it
 # as third-party and demands a blank line between `import numpy` and
-# `from _helpers import ...`. Treating both pyforge and _helpers as
+# `from _helpers import ...`. Treating both quorin and _helpers as
 # first-party keeps the import order natural.
-known-first-party = ["pyforge", "_helpers"]
+known-first-party = ["quorin", "_helpers"]
 
 [format]
 quote-style = "double"

@@ -29,7 +29,7 @@ and the cold-cache harness.
 Three options were considered for the `--strict` collision with env-gated
 benches:
 
-- (a) Set `PYFORGE_RUN_LARGE_BENCH=1` etc. on every PR run. Wasteful;
+- (a) Set `QUORIN_RUN_LARGE_BENCH=1` etc. on every PR run. Wasteful;
       PRs would run 100k/1M-scale benches each time.
 - (b) Per-threshold `requires_env:` field in the YAML. Adds parser
       complexity; bench list and env list drift apart.
@@ -233,8 +233,8 @@ Discovered on Step 16a's first two push-to-main CI runs:
    accumulation from earlier benches + the kernel's transient buffers
    pushed cumulative usage over the limit.
 
-**Workflow consequence:** `PYFORGE_RUN_LARGE_BENCH` AND
-`PYFORGE_RUN_RECORD_BENCH` both restricted to `workflow_dispatch` +
+**Workflow consequence:** `QUORIN_RUN_LARGE_BENCH` AND
+`QUORIN_RUN_RECORD_BENCH` both restricted to `workflow_dispatch` +
 `schedule` (manual + weekly), NOT push. Push-to-main runs Tier-1
 only — same scope as pre-Step-16 CI but now with actual gate
 enforcement via `check.py --strict`. The `benchmarks/conftest.py`
@@ -343,7 +343,7 @@ The Step 16b A/B harness (`benchmarks/runs/step16_madvise_ab.py`) measured `MADV
 - **Larger L3 host** (more recent Intel/AMD platform; ubuntu-latest's older Xeon class is ~30 MB shared L3).
 - **Bare-metal venue** where THP fragmentation pressure is lower than virtualized runners.
 
-The A/B harness (`benchmarks/runs/step16_madvise_ab.py`) is kept in repo. To re-run on a better venue: restore the `hugepage` kwarg threading from the Rev-10-era git history (`pyforge/_internal/posix_shm.py`, `pyforge/shm.py`, `tests/_helpers.py::make_segment`, `benchmarks/test_assembly_benchmark.py::seg_200_field` env-var read) and invoke `python benchmarks/runs/step16_madvise_ab.py --num-runs 20`. Canonical JSON committed at `benchmarks/results/madv_ab.json` for the Rev-10 baseline.
+The A/B harness (`benchmarks/runs/step16_madvise_ab.py`) is kept in repo. To re-run on a better venue: restore the `hugepage` kwarg threading from the Rev-10-era git history (`quorin/_internal/posix_shm.py`, `quorin/shm.py`, `tests/_helpers.py::make_segment`, `benchmarks/test_assembly_benchmark.py::seg_200_field` env-var read) and invoke `python benchmarks/runs/step16_madvise_ab.py --num-runs 20`. Canonical JSON committed at `benchmarks/results/madv_ab.json` for the Rev-10 baseline.
 
 ### 8. P4 distinction: assemble-under-GC vs GC pause durations
 
@@ -444,7 +444,7 @@ lookup-jit ships in 16c.
 
 ## Out of scope (deferred)
 
-- 10M hydration bench (capacity-planning only; `PYFORGE_RUN_RECORD_BENCH=1`
+- 10M hydration bench (capacity-planning only; `QUORIN_RUN_RECORD_BENCH=1`
   staying ungated).
 - Lookup-jit (with trip-wire to 16c).
 - MADV_HUGEPAGE A/B (16b deliverable; ships only if measured ≥ 1.5×
@@ -452,7 +452,7 @@ lookup-jit ships in 16c.
 - GC callback+freeze +31% interaction localization (ADR-006 known
   limitation).
 - Buffer pool C-extension `_Checkout` optimization.
-- `pyforge.wal_consumer` warm-import optimization (cosmetic).
+- `quorin.wal_consumer` warm-import optimization (cosmetic).
 - Self-hosted runners.
 - CPU pinning / numa beyond MADV_HUGEPAGE.
 - README authorship (Step 17).

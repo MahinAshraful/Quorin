@@ -6,11 +6,11 @@
 
 ## Decision
 
-Pyforge ships `pyforge.wal_consumer.WALConsumer`, a single-coroutine
-async consumer for the Redis Stream `pyforge:wal` produced by
+Quorin ships `quorin.wal_consumer.WALConsumer`, a single-coroutine
+async consumer for the Redis Stream `quorin:wal` produced by
 ADR-008's `WALProducer`. The consumer fans each message out to two
 sinks: the online store (POSIX shared memory via
-`pyforge.layout.insert`) and an injected offline sink
+`quorin.layout.insert`) and an injected offline sink
 (`OfflineWriter` Protocol; Step 11's Parquet writer is the production
 implementation, `NoopOfflineWriter` is the default).
 
@@ -25,7 +25,7 @@ class WALConsumer:
         offline: OfflineWriter | None = None,
         *,
         stream_key: bytes = DEFAULT_STREAM_KEY,
-        group_name: str = "pyforge_consumers",
+        group_name: str = "quorin_consumers",
         consumer_name: str = "consumer-1",
         batch_count: int = 100,
         block_ms: int = 500,
@@ -52,7 +52,7 @@ add lock contention without saving wall-clock time.
 
 Caller owns the event loop. This sidesteps invariant #14 (background
 threads need daemon + Event + `os.register_at_fork`) entirely — there
-is no Pyforge-managed thread, so there is nothing to fork-survive.
+is no Quorin-managed thread, so there is nothing to fork-survive.
 Deployments under uvicorn/gunicorn workers fork-then-call `asyncio.run`,
 each worker getting its own loop and its own consumer instance.
 
@@ -64,8 +64,8 @@ per segment). To keep the lockless 5 µs read budget, we accept
 "single consumer" as a hard constraint.
 
 Horizontal scaling answer (CLAUDE.md §1): `hash(entity_id) mod N`
-across N independent Pyforge instances, each with its own segment,
-its own stream `pyforge:wal:{i}`, and its own consumer. This is a
+across N independent Quorin instances, each with its own segment,
+its own stream `quorin:wal:{i}`, and its own consumer. This is a
 deployment-layer concern; Step 10 does not implement it.
 
 ### 3. Deferred-XACK durability — SET and XACK signal different things.
@@ -73,7 +73,7 @@ deployment-layer concern; Step 10 does not implement it.
 The two operations the consumer sends back to Redis are operationally
 distinct and intentionally decoupled:
 
-- **`SET pyforge:processed:{msg_id} EX 86400`** = "online store has
+- **`SET quorin:processed:{msg_id} EX 86400`** = "online store has
   this data; `WALProducer.write_sync` may unblock." Fires immediately
   after `layout.insert` succeeds.
 - **`XACK`** = "I have durably persisted this message in the offline
@@ -162,7 +162,7 @@ these.
 Consequences:
 - Invariant #3 stays provable from outside the consumer. The user
   hands segments to one consumer instance, and that's the only writer.
-- No hidden Redis calls (`INCR pyforge:refcount:*`) on any apply
+- No hidden Redis calls (`INCR quorin:refcount:*`) on any apply
   path. The producer's cost model still holds.
 
 The constructor validates `seg.schema.__name__ == key` for each
@@ -171,7 +171,7 @@ allows.
 
 ### 8. Internal `row_pack` (NOT the test helper).
 
-`pyforge._internal.row_pack.pack_row_from_list(schema, values, out)`
+`quorin._internal.row_pack.pack_row_from_list(schema, values, out)`
 takes the producer's wire-shape values list (positional, name_hash
 order) and writes into a caller-supplied bytearray.
 
@@ -184,9 +184,9 @@ is name_hash-ordered).
 Single consolidated `struct.Struct.pack_into` call writes ALL scalar
 fields in one C pass, with `Nx` pad-byte format codes for
 cache-line gaps and for shaped-field regions. Without the pads, the
-naive consolidator would only catch the first field (because Pyforge
+naive consolidator would only catch the first field (because Quorin
 aligns every field start to 64 bytes; see
-`pyforge.schema._field_byte_offsets`) and dump every other field into
+`quorin.schema._field_byte_offsets`) and dump every other field into
 the slow per-field numpy path — net ~30 µs of dispatch overhead at
 200 fields. With pads, the format string for a 200-field float32
 schema is `"<f60xf60x...f"` and the C call places all 200 floats at
@@ -231,7 +231,7 @@ in this design.
 ### 10. Consumer-name distributed lock.
 
 At `run()` start, the consumer SETs
-`pyforge:consumer:lock:{group}:{name} <pid> EX 60 NX`. If the SET
+`quorin:consumer:lock:{group}:{name} <pid> EX 60 NX`. If the SET
 fails (another consumer holds the lock), GET returns the holder's
 PID and we raise `ConsumerNameInUseError`.
 
@@ -251,7 +251,7 @@ need both. `redis-py` does not unify the two client classes —
 their connection pools are separate. Pickling a sync client and
 using it via asyncio is NOT supported.
 
-A pool-unification helper (`pyforge.wal.make_clients(url)`) is
+A pool-unification helper (`quorin.wal.make_clients(url)`) is
 deferred to Step 12 (public API). Cross-listed in CLAUDE.md §8 as
 the gotcha lookup.
 
@@ -268,7 +268,7 @@ idle-RPS cost: 10 RPS to Redis when no traffic) or override the
 Standard Redis-tutorial guidance is `id="$"` ("only deliver new
 messages to a fresh group"). For a write-ahead log this is an
 operability footgun: a producer that XADDs before any consumer is
-running would have its messages silently orphaned. Pyforge uses
+running would have its messages silently orphaned. Quorin uses
 `id="0"` so a fresh group drains the entire current stream.
 
 Once the group exists, the cursor lives in Redis and survives
@@ -313,7 +313,7 @@ Acceptance:
   cycle 20 times with random kill timings — all converge to the same final
   state (100 distinct entities in shm, PEL drained).
 - 5 new benchmark cases, all under their threshold gates.
-- Static checks (`ruff check`, `ruff format --check`, `mypy pyforge`) clean.
+- Static checks (`ruff check`, `ruff format --check`, `mypy quorin`) clean.
 
 ## What this rejects (alternatives considered)
 

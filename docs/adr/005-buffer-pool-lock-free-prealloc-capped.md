@@ -6,7 +6,7 @@
 
 ## Decision
 
-Pyforge ships `pyforge.pool.BufferPool` — a per-schema pool of pre-allocated
+Quorin ships `quorin.pool.BufferPool` — a per-schema pool of pre-allocated
 float32 output buffers consumed via a `with pool.checkout() as buf:` context
 manager. The pool is:
 
@@ -65,11 +65,11 @@ pool was supposed to replace. Refactoring to a class-based context manager
 hit-only down to **~550 ns median**. That gap (~400 ns) is the cost of
 `@contextmanager`'s generator protocol on a sub-microsecond loop:
 GeneratorContextManager allocation, `next()` to advance to yield, `send()`
-to advance past. Worth knowing for any future Pyforge code that's tempted
+to advance past. Worth knowing for any future Quorin code that's tempted
 to `@contextmanager` something on the hot path.
 
 Even with the class-based refactor, the pool is **not a per-call latency
-win** for the schemas Pyforge currently serves:
+win** for the schemas Quorin currently serves:
 
 | Scenario | Step 5 (no pool) | Step 6 pooled | Delta |
 |---|---|---|---|
@@ -296,7 +296,7 @@ native CI. The honest disclosure:
    cost scales linearly with bytes; the pool's ~550 ns is constant.
 4. **Pool is opt-in for the single-entity path** — callers who measure
    their own workload and find the +2-4 us unacceptable use
-   `pyforge.assembly.assemble(seg, eid)` without a pool. Callers wanting
+   `quorin.assembly.assemble(seg, eid)` without a pool. Callers wanting
    the GC-pressure / memory-ceiling wins use the pooled API.
 
 The Step 17 follow-up "C-extension `_Checkout`" (parking-lot item)
@@ -310,7 +310,7 @@ context.
 
 ## References
 
-- Pyforge build plan, Step 6 section ("Buffer pool").
+- Quorin build plan, Step 6 section ("Buffer pool").
 - ADR-002 on per-open refcounting (analogous "no per-call shared-state
   mutation" reasoning for hot paths).
 - ADR-004 on Numba adoption (the path this pool serves).

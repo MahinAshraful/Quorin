@@ -11,8 +11,8 @@ segment ready. The remaining integrity gap is the **hot-restart** loop. A
 process that crashes mid-flight leaves three pieces of state nobody else
 will clean up:
 
-* `pyforge:refcount:{name}` — initial value of 1, never decremented.
-* `pyforge:pid_segments:{pid}` — set of segment names held; the `close`
+* `quorin:refcount:{name}` — initial value of 1, never decremented.
+* `quorin:pid_segments:{pid}` — set of segment names held; the `close`
   Lua's SREM never runs for the dead PID.
 * `/dev/shm/{name}` — the actual shared-memory inode; per invariant #6,
   only the creator may unlink, and the creator is dead.
@@ -24,13 +24,13 @@ Without an external janitor, every uncaught crash leaks one or more
 
 Three deliverables, all in one commit (`feat: step 14 — watchdog`).
 
-### 1. Heartbeat producer (`pyforge._internal.heartbeat`)
+### 1. Heartbeat producer (`quorin._internal.heartbeat`)
 
-Every library process that opens a Pyforge segment runs a single daemon
+Every library process that opens a Quorin segment runs a single daemon
 thread that periodically writes:
 
 ```
-HSET pyforge:heartbeats {pid} "{create_time_ns}:{wall_time_ns}"
+HSET quorin:heartbeats {pid} "{create_time_ns}:{wall_time_ns}"
 ```
 
 Mirrors `gc_manager`'s daemon-thread pattern (CLAUDE.md invariant #14):
@@ -41,29 +41,29 @@ Public API: `ensure_started(redis_client, pid=None)` (idempotent) +
 `stop()` + `is_running()`. Called from `SegmentRegistry.create` and
 `SegmentRegistry.open_current` at method top (before any state mutation).
 
-### 2. Watchdog process (`pyforge.watchdog`)
+### 2. Watchdog process (`quorin.watchdog`)
 
-Separate process (`python -m pyforge.watchdog --redis ...`) that:
+Separate process (`python -m quorin.watchdog --redis ...`) that:
 
-1. HGETALLs `pyforge:heartbeats` every `tick_interval_seconds` (default 30s).
+1. HGETALLs `quorin:heartbeats` every `tick_interval_seconds` (default 30s).
 2. Per pid: tracks `wall_time_ns` across ticks. Unchanged → `miss_count++`;
    changed (including backward jumps from NTP correction) → reset.
 3. After `miss_threshold` consecutive misses (default 5), cross-checks
    via `psutil.Process(pid).create_time()` with EXACT equality against
    the stored `create_time_ns`.
 4. Confirmed dead → atomic Lua transaction (DECRs refcounts, queues to
-   `pyforge:cleanup_queue`, clears `schema:current` via the sidetable).
-5. Drains `pyforge:cleanup_queue` — the canonical posix_shm.unlink call site.
+   `quorin:cleanup_queue`, clears `schema:current` via the sidetable).
+5. Drains `quorin:cleanup_queue` — the canonical posix_shm.unlink call site.
 
 Tests construct `WatchdogState` directly and call `run_one_tick()`
 deterministically; chaos tests spawn the real subprocess.
 
-### 3. Sidetable + back-touches (`pyforge:segment_to_schema`)
+### 3. Sidetable + back-touches (`quorin:segment_to_schema`)
 
 A hash mapping `segment_name → schema_name`. Written by
 `SegmentRegistry.create` in the existing pipelined transaction. Read by
 both the watchdog's dead-PID Lua AND the close-Lua extension at
-refcount-0 — eliminates the O(N keyspace) `KEYS pyforge:schema:*:current`
+refcount-0 — eliminates the O(N keyspace) `KEYS quorin:schema:*:current`
 scan that test helpers had been doing in lieu of production. Symmetric
 across the two cleanup paths (watchdog dead-PID + live-process close).
 
@@ -149,7 +149,7 @@ A "±1 ms tolerance" approach would silently misclassify on tickless or
 chain because it inherits from `NoSuchProcess` in psutil's class
 hierarchy.
 
-Counter: `pyforge_watchdog_cross_check_unverifiable_total{reason}` with
+Counter: `quorin_watchdog_cross_check_unverifiable_total{reason}` with
 reason ∈ {`access_denied`, `zombie`}. Operators alert on >0 — non-zero
 means the watchdog is partially blind to some PIDs.
 
@@ -168,7 +168,7 @@ The cleanup Lua's first op is HGET on `heartbeats[pid]`; parses
 `create_ns` from the stored value; compares to `expected_create_time_ns`
 (passed by the watchdog as ARGV[2] from its cached `_PidEntry`).
 Mismatch → return `-1` (sentinel) → watchdog increments
-`pyforge_watchdog_pid_reuse_abort_total` and drops the `_tracked` entry
+`quorin_watchdog_pid_reuse_abort_total` and drops the `_tracked` entry
 (next tick re-tracks under B's create_time).
 
 **Residual risk**: if A's heartbeat was HDEL'd via atexit before the
@@ -177,13 +177,13 @@ reuse AND B's force-first-refresh failed (Redis blip swallowed),
 whatever's in `pid_segments`. Combined probability ~3e-9 per dead PID
 (~1 ms reuse window × ~1e-3 force-first-refresh failure rate / ~327 s
 PID-reuse interval at default `pid_max=32768`). Operators alert on the
-counter AND on `pyforge:cleanup_queue` size during incidents.
+counter AND on `quorin:cleanup_queue` size during incidents.
 
 ### #5. Single canonical posix_shm.unlink call site
 
-The dead-PID Lua SADDs zero-refcount segments to `pyforge:cleanup_queue`
+The dead-PID Lua SADDs zero-refcount segments to `quorin:cleanup_queue`
 and returns the **count** (not the names). The watchdog's `run_one_tick`
-step 4 drains `pyforge:cleanup_queue` and calls `posix_shm.unlink`.
+step 4 drains `quorin:cleanup_queue` and calls `posix_shm.unlink`.
 
 The dead-PID Lua does NOT return names. An earlier draft did, leading
 to step-3 unlinking the names AND step-4's drain SPOPing them and
@@ -191,7 +191,7 @@ trying again — 2x syscalls per segment per tick (FileNotFoundError on
 the second, debug-logged but real overhead).
 
 If the watchdog process crashes between the dead-PID Lua and the drain,
-the names are still in `pyforge:cleanup_queue` — next tick's drain (or
+the names are still in `quorin:cleanup_queue` — next tick's drain (or
 next watchdog instance's first tick) picks them up.
 
 ### #6. Close-Lua extension symmetric with dead-PID Lua
@@ -222,30 +222,30 @@ Two paths:
 
 **Attended (instant recovery)** — use when no live serving consumers
 hold the schema:
-1. Confirm via `redis-cli HGETALL pyforge:heartbeats` that no live
+1. Confirm via `redis-cli HGETALL quorin:heartbeats` that no live
    process is heartbeating against the dead PID.
-2. `redis-cli DEL pyforge:schema:X:current`
+2. `redis-cli DEL quorin:schema:X:current`
 3. Re-run `hydrate()`.
 
 ### Cross-UID watchdog deployments
 
 If the watchdog runs as a different UID than its monitored producers
-(e.g. dedicated `pyforge-watchdog` service user, root-owned producer
+(e.g. dedicated `quorin-watchdog` service user, root-owned producer
 pods), `psutil.Process(pid).create_time()` raises `AccessDenied` for
 cross-UID PIDs. The watchdog can't distinguish "stuck alive" from "PID
 reuse" → conservative; does NOT clean up.
 
 **Recommendation**: run the watchdog with `CAP_SYS_PTRACE` or as root
 if it must clean up cross-UID producers. Alert on
-`pyforge_watchdog_cross_check_unverifiable_total{reason="access_denied"}` > 0.
+`quorin_watchdog_cross_check_unverifiable_total{reason="access_denied"}` > 0.
 
 ### Pre-Step-14 sidetable migration
 
 Producers that were running before the Step 14 deploy did NOT write
-`pyforge:segment_to_schema` entries. When those producers eventually
+`quorin:segment_to_schema` entries. When those producers eventually
 die post-upgrade, the watchdog's HGET returns nil → the
 `schema:current` cleanup branch is skipped → operator falls back to
-the manual `redis-cli DEL pyforge:schema:X:current`.
+the manual `redis-cli DEL quorin:schema:X:current`.
 
 **Mitigation**: drain producers before upgrading. Strict-acceptance is
 also fine — new segments created post-upgrade self-clean from day 1.
@@ -255,9 +255,9 @@ also fine — new segments created post-upgrade self-clean from day 1.
 * Every uncaught crash now self-heals within 150 s without operator
   intervention.
 * Every library process pays one Redis HSET / 10 s — negligible at any
-  scale Pyforge targets.
+  scale Quorin targets.
 * The watchdog's tick is observable end-to-end via
-  `pyforge_watchdog_*` metrics; a `--metrics-port` CLI flag exposes
+  `quorin_watchdog_*` metrics; a `--metrics-port` CLI flag exposes
   `/metrics` via `prometheus_client.start_http_server` for operator
   scraping.
 * Multiple watchdog instances against the same Redis is benign double
@@ -271,7 +271,7 @@ also fine — new segments created post-upgrade self-clean from day 1.
   "single watchdog per Redis cluster, restarted by supervisor."
 * **Periodic /dev/shm orphan scan** — pre-existing failure mode where
   a process SIGKILL'd between `posix_shm.create` and the Redis pipeline
-  EXEC leaves a `/dev/shm/pyforge_*` entry with no Redis state.
+  EXEC leaves a `/dev/shm/quorin_*` entry with no Redis state.
   Watchdog can't see it. Step 16 parking-lot.
 * **Lua cleanup chunking** — pathological `pid_segments` with 10k+
   entries blocks Redis during the dead-PID Lua. Realistic <100;
@@ -311,11 +311,11 @@ also fine — new segments created post-upgrade self-clean from day 1.
 
 ## References
 
-* Spec: [`pyforge_build_steps.md` § "Step 14 — Watchdog"](../../pyforge_build_steps.md#L1321-L1359)
+* Spec: [`quorin_build_steps.md` § "Step 14 — Watchdog"](../../quorin_build_steps.md#L1321-L1359)
 * Plan: [`progress/step14_plan.md`](../../progress/step14_plan.md)
-* Heartbeat module: [`pyforge/_internal/heartbeat.py`](../../pyforge/_internal/heartbeat.py)
-* Watchdog module: [`pyforge/watchdog.py`](../../pyforge/watchdog.py)
-* Lua scripts: [`pyforge/_internal/watchdog_lua.py`](../../pyforge/_internal/watchdog_lua.py)
+* Heartbeat module: [`quorin/_internal/heartbeat.py`](../../quorin/_internal/heartbeat.py)
+* Watchdog module: [`quorin/watchdog.py`](../../quorin/watchdog.py)
+* Lua scripts: [`quorin/_internal/watchdog_lua.py`](../../quorin/_internal/watchdog_lua.py)
 * CLAUDE.md invariant #14 (background threads): [`CLAUDE.md` §5](../../CLAUDE.md)
 * CLAUDE.md invariant #6 (creator-only-unlinks): [`CLAUDE.md` §5](../../CLAUDE.md)
 * Step 13's `_force_drop_orphan` justification: [ADR-012 §3](./012-hydration.md)

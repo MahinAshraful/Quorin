@@ -6,9 +6,9 @@
 
 ## Decision
 
-Pyforge ships [`pyforge.hydration.hydrate`](../../pyforge/hydration.py),
+Quorin ships [`quorin.hydration.hydrate`](../../quorin/hydration.py),
 a sync orchestrator that rebuilds the online store (a fresh shared-memory
-segment registered as `pyforge:schema:{name}:current`) from the offline
+segment registered as `quorin:schema:{name}:current`) from the offline
 store (a `ParquetDatasetStore`). It runs at startup or after any event
 that wipes Redis state — operator-driven recovery, not background
 maintenance.
@@ -36,8 +36,8 @@ The 14 numbered sections below lock the design end-to-end.
 
 Hydrate refuses to run if EITHER:
 
-- `pyforge:schema:{name}:current` exists (a current segment is registered) → `HydrationConflictError`.
-- `pyforge:wal_consumer:liveness` exists (a WAL consumer is alive) → `HydrationConflictError`.
+- `quorin:schema:{name}:current` exists (a current segment is registered) → `HydrationConflictError`.
+- `quorin:wal_consumer:liveness` exists (a WAL consumer is alive) → `HydrationConflictError`.
 
 The two checks have different roles:
 
@@ -46,7 +46,7 @@ The two checks have different roles:
   on it. Creating a second segment and flipping `current` to point at
   the new one would race the writer's in-flight insert against the
   reader's view, producing torn slot tables. Operators clear it via
-  `redis-cli DEL pyforge:schema:{name}:current` after stopping the
+  `redis-cli DEL quorin:schema:{name}:current` after stopping the
   writer (Step 14 watchdog will automate this once shipped).
 - **Precondition #2 is defense-in-depth.** Catches the "operator
   manually dropped current but forgot to stop the consumer" scenario.
@@ -54,7 +54,7 @@ The two checks have different roles:
   and crash; safer to refuse hydrate upfront.
 
 Both preconditions raise BEFORE `t0 = perf_counter()`, so the
-`pyforge_hydration_seconds{outcome="err"}` histogram excludes
+`quorin_hydration_seconds{outcome="err"}` histogram excludes
 precondition rejections. Operators alerting on hydrate failure rate
 combine the histogram with the `hydrate.precondition_*` structlog
 WARNING signal — rejections are a separate failure mode (operator
@@ -70,9 +70,9 @@ landing in that window reports `now - 0.0`, which on a 1-day-uptime
 host is 86400 seconds — paging on-call with "consumer dead 1 day ago"
 when the consumer just started.
 
-Fix in [`pyforge.wal_consumer.run`](../../pyforge/wal_consumer.py):
+Fix in [`quorin.wal_consumer.run`](../../quorin/wal_consumer.py):
 
-1. Force-first-refresh of the liveness key + `SET pyforge:wal_consumer:liveness ... EX 30` immediately at top of `run()`, before any awaits.
+1. Force-first-refresh of the liveness key + `SET quorin:wal_consumer:liveness ... EX 30` immediately at top of `run()`, before any awaits.
 2. `_liveness_last_refresh = time.monotonic()` immediately after the SET.
 3. Defensive `wal_consumer_liveness_age_seconds.set(0.0)` (covers multiprocess-collector futures where the gauge's first observation is the source of truth).
 
@@ -98,7 +98,7 @@ is wrong here:
   `posix_shm.unlink(seg.name)` directly is the right shape: same
   process, has the handle, can clean up synchronously.
 
-[`_force_drop_orphan`](../../pyforge/hydration.py) does three things in
+[`_force_drop_orphan`](../../quorin/hydration.py) does three things in
 explicit order:
 
 1. `posix_shm.unlink(segment.name)` — remove the inode.
@@ -121,10 +121,10 @@ The plan's Rev-1 chaos suite included a C2 test (concurrent hydrate
 race, two children both call hydrate). It was **deleted before shipping**
 because the test premise was wrong:
 
-- `_segment_name(schema)` uses a UUID suffix (`pyforge_{schema_name}_v{version}_{uuid_hex}`).
+- `_segment_name(schema)` uses a UUID suffix (`quorin_{schema_name}_v{version}_{uuid_hex}`).
 - Each `registry.create` call generates a fresh UUID.
 - POSIX `O_CREAT|O_EXCL` only fails on exact-name collisions, which UUID suffixes preclude.
-- Both racing children would always succeed at `registry.create`, both would call `_INCR` on different refcount keys, both would `SET pyforge:schema:{name}:current` (last-write-wins), both would exit 0.
+- Both racing children would always succeed at `registry.create`, both would call `_INCR` on different refcount keys, both would `SET quorin:schema:{name}:current` (last-write-wins), both would exit 0.
 
 There is no enforcement code path to test. The contract is operator
 discipline: stop the WAL consumer (or wait for liveness expiry) before
@@ -132,7 +132,7 @@ running hydrate, and don't run two hydrates concurrently.
 
 When Step 14 watchdog ships, orphans from a violated contract get
 cleaned up automatically. Until then, two-segment leaks require
-operator intervention (`redis-cli DEL pyforge:schema:{name}:current` +
+operator intervention (`redis-cli DEL quorin:schema:{name}:current` +
 manual `posix_shm.unlink` of the orphan name from
 `/dev/shm`).
 
@@ -170,7 +170,7 @@ signature with no awaits would mislead callers into believing the
 method cooperates with the loop; it doesn't.
 
 This mirrors the precedent set by
-[`ParquetDatasetStore.read_point_in_time`](../../pyforge/offline.py)
+[`ParquetDatasetStore.read_point_in_time`](../../quorin/offline.py)
 in Step 12 (ADR-011 §10).
 
 ## 8. `latest_features` primitive replaces `read_point_in_time(query=now)`
@@ -181,7 +181,7 @@ table (one row per entity at `now`) would work but pays per-query
 `searchsorted` for each entity. For 1M entities that's 1M binary
 searches over a sorted-event_time array — pure overhead.
 
-[`ParquetDatasetStore.latest_features`](../../pyforge/offline.py) is
+[`ParquetDatasetStore.latest_features`](../../quorin/offline.py) is
 the load-bearing hydration primitive: a single
 `group_by(entity_id).aggregate([("event_time_ns", "max"), ...])` over
 the dedup'd row set, with the `as_of_time_ns` filter applied at the
@@ -198,7 +198,7 @@ at 100k × 200 fields was ~3000ms — twice as bad as expected because
 the column-scatter phase did 200 strided writes (each touching 100k
 cache lines at 13K stride, ~1630ms alone).
 
-[`_insert_many_core`](../../pyforge/_internal/insert_kernel.py) takes
+[`_insert_many_core`](../../quorin/_internal/insert_kernel.py) takes
 column-major flat data via 4 array args (`field_byte_offsets_in_row`,
 `field_byte_counts`, `field_data_starts`, `field_data`). The kernel
 scatters each field directly into the segment's row buffer in
@@ -245,7 +245,7 @@ crossed a threshold N. Two compounding problems:
   honors it by not advancing until the loop completes). There is no
   mid-insert state observable from outside the kernel.
 - The poller's `registry.open_current` from the parent SREMs from
-  `pyforge:pid_segments:{child_pid}` — sabotaging the watchdog state
+  `quorin:pid_segments:{child_pid}` — sabotaging the watchdog state
   the test needs to verify post-cleanup.
 
 [`tests/chaos/test_hydration_crash.py`](../../tests/chaos/test_hydration_crash.py)
@@ -257,7 +257,7 @@ the test silently a no-op). Delays at {20, 50, 100} ms span the
 common kill windows; C4's 20-seed iteration gives ~5 minutes of
 chaos-soak per CI run.
 
-## 12. Test sequencing relies on `pyforge:processed:{msg_id}`, not pending counts
+## 12. Test sequencing relies on `quorin:processed:{msg_id}`, not pending counts
 
 Integration tests need to know "consumer has applied through msg_id
 N" before flushing the parquet store and calling hydrate. Two
@@ -275,7 +275,7 @@ approaches don't work:
   which is disabled in this test. Helper waits forever.
 
 [`_wait_for_msg_processed`](../../tests/integration/test_hydration_e2e.py)
-polls for `pyforge:processed:{msg_id}` (set by consumer immediately
+polls for `quorin:processed:{msg_id}` (set by consumer immediately
 after `layout.insert + offline.append`). This is the deterministic
 "consumer applied through msg_id" signal. The apply order
 (layout.insert → offline.append → SET processed_key → pending_ack
@@ -288,11 +288,11 @@ The pattern is: `wait_for_msg_processed(last_msg_id) → drain_consumer →
 flush`. Five integration tests reuse it. Future tests that sequence
 producer ↔ consumer ↔ store should follow the same pattern.
 
-## 13. `registry.close` does NOT delete `pyforge:schema:{name}:current`
+## 13. `registry.close` does NOT delete `quorin:schema:{name}:current`
 
-The Lua script in [`SegmentRegistry.close`](../../pyforge/shm.py)
+The Lua script in [`SegmentRegistry.close`](../../quorin/shm.py)
 removes refcount + pid_segments + queues for cleanup_queue, but
-deliberately leaves `pyforge:schema:{name}:current` in place.
+deliberately leaves `quorin:schema:{name}:current` in place.
 Production-side, the next `registry.create` overwrites it. For
 repeated hydrate calls in tests (setup → hydrate → cleanup → hydrate
 again), the orphan `current` pointer trips precondition #1 on round 2.
@@ -344,7 +344,7 @@ consumer's apply path; hydration extends it to the orchestrator path.
   push; the 200-210ms WSL2 smoke result will likely drop to 30-50ms
   on native Linux. Recorded in `progress/progress.md` once observed.
 - **Concurrent-hydrate enforcement** — could be added via a
-  `pyforge:hydration:lock` SETNX with a TTL, blocking the second
+  `quorin:hydration:lock` SETNX with a TTL, blocking the second
   caller. Deferred because the operator-serialization contract is
   sufficient for single-node deployments and adds zero RTT to the
   read path. Reconsider if multi-machine orchestration ever lands
@@ -357,9 +357,9 @@ consumer's apply path; hydration extends it to the orchestrator path.
 - Step 14's watchdog has a clear contract:
   [`tests/_watchdog_helpers.py::simulate_watchdog_post_crash_cleanup`](../../tests/_watchdog_helpers.py)
   documents the post-SIGKILL path that walks
-  `pyforge:pid_segments:{dead_pid}`, DECRs refcounts, and unlinks
+  `quorin:pid_segments:{dead_pid}`, DECRs refcounts, and unlinks
   segments whose count hit zero. The watchdog must also drop
-  `pyforge:schema:*:current` pointers that match unlinked segments
+  `quorin:schema:*:current` pointers that match unlinked segments
   (test helper does an O(N keyspace) scan; the real watchdog will
   use a sidetable to avoid this).
 - Step 15's schema evolution must not break the two-precondition
@@ -370,7 +370,7 @@ consumer's apply path; hydration extends it to the orchestrator path.
   per CLAUDE.md §8).
 - Operator runbook for hydrate failure: stop WAL consumer (SIGTERM
   or wait 30s for liveness expiry) → confirm precondition #2 cleared →
-  `redis-cli DEL pyforge:schema:{name}:current` → run hydrate. If
+  `redis-cli DEL quorin:schema:{name}:current` → run hydrate. If
   hydrate raises `EmptyDatasetError`, inspect `lookback_days` (default
   30) — the offline store may have rotated out all rows.
 - The 200-210ms WSL2 smoke result is the regression-detection signal

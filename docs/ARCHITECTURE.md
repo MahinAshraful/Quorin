@@ -514,9 +514,3 @@ gates after the canonical Tier-2 N=20 baselines were established.
   invariants and the long list of "we already paid for this bug, don't
   reintroduce it" gotchas.
 
----
-
-*The codebase's internal-development codename was Pyforge; you may see
-"Pyforge" rather than "Quorin" in the ADR archive, in CLAUDE.md, and in
-some docstring legacy text. Functionally identical — the package on PyPI
-is `quorin`.*

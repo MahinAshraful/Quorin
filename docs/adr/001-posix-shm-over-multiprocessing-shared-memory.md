@@ -6,14 +6,14 @@
 
 ## Decision
 
-Pyforge's POSIX shared-memory layer (`pyforge/_internal/posix_shm.py`) uses the
+Quorin's POSIX shared-memory layer (`quorin/_internal/posix_shm.py`) uses the
 `posix_ipc` PyPI library as its sole underlying dependency for
 `shm_open` / `mmap` / `shm_unlink`. The stdlib `multiprocessing.shared_memory`
 module is **not** used.
 
 ## Context
 
-Shared memory segments need three operations for Pyforge's use case:
+Shared memory segments need three operations for Quorin's use case:
 allocate (`shm_open` + `ftruncate` + `mmap`), open-existing, and
 unlink. There are three viable Python-level approaches:
 
@@ -79,7 +79,7 @@ fd-lifecycle mistake is an hour not spent on those.
 - Handles fd lifecycle, MAP_FAILED checks, and platform differences correctly.
 - Has been in production use for ~15 years.
 
-The Pyforge wrapper (`pyforge/_internal/posix_shm.py`) is a ~100-line
+The Quorin wrapper (`quorin/_internal/posix_shm.py`) is a ~100-line
 adapter that presents a clean internal interface
 (`create` / `open_existing` / `close` / `unlink`). If a future Python
 version fixes the resource_tracker bug cleanly or if `posix_ipc` ever

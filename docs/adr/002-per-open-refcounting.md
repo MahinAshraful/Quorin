@@ -39,7 +39,7 @@ The layout guarantee that makes the lock-free read path sound is:
 Writes happen through a single writer (the WAL consumer, Step 10) to
 regions that readers are not concurrently reading. Schema evolution
 (Step 15) allocates a **new** segment and atomically flips the
-`pyforge:schema:{name}:current` pointer — the old segment continues to
+`quorin:schema:{name}:current` pointer — the old segment continues to
 live until its refcount drops to zero. The old segment's bytes never
 change under a reader.
 
@@ -49,12 +49,12 @@ per-open refcount answers the relevant question correctly.
 
 ## The design
 
-- **`open_current`** does one `INCR pyforge:refcount:{segment_name}` and
-  one `SADD pyforge:pid_segments:{pid} {segment_name}`, in a pipelined
+- **`open_current`** does one `INCR quorin:refcount:{segment_name}` and
+  one `SADD quorin:pid_segments:{pid} {segment_name}`, in a pipelined
   transaction.
 - **`close`** runs a single Lua script that does
-  `DECR pyforge:refcount:{segment_name}`; if the result is zero, it adds
-  the segment name to `pyforge:cleanup_queue`; and unconditionally
+  `DECR quorin:refcount:{segment_name}`; if the result is zero, it adds
+  the segment name to `quorin:cleanup_queue`; and unconditionally
   `SREM`s the segment from this process's `pid_segments` set.
 - **`read()`** — there is no read method on `Segment`. Callers access
   `segment.mmap_view` (a zero-copy memoryview) and slice it directly.
@@ -65,9 +65,9 @@ per-open refcount answers the relevant question correctly.
 A reader that crashes with SIGKILL never calls `close`. Its refcount
 stays inflated. Two mechanisms catch this:
 
-1. **Watchdog (Step 14)** reads `pyforge:heartbeats` at 100 ms intervals,
+1. **Watchdog (Step 14)** reads `quorin:heartbeats` at 100 ms intervals,
    detects dead PIDs, and for each one iterates
-   `SMEMBERS pyforge:pid_segments:{pid}`, `DECR`ing each segment's
+   `SMEMBERS quorin:pid_segments:{pid}`, `DECR`ing each segment's
    refcount and queuing for cleanup if the count hits zero.
 2. **Segment survival under SIGKILL** is tested by
    `tests/integration/test_shm_lifecycle.py::test_reader_sigkill_does_not_destroy_segment`.
@@ -99,7 +99,7 @@ watchdog cycle before being reclaimed. For a single-node system with
 
 - Redis localhost latency characterization: numerous benchmarks show
   ~30-80 µs p99 for a single INCR over loopback on modern hardware.
-- Pyforge spec, section "Latency targets are conditional, not a single
+- Quorin spec, section "Latency targets are conditional, not a single
   number": 5 µs p99 warm-cache / small-schema.
 - ADR-001 on why the segment lives in `/dev/shm` at all.
 

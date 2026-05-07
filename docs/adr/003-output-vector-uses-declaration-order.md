@@ -6,7 +6,7 @@
 
 ## Decision
 
-`pyforge.serving.assemble(segment, entity_id)` returns a 1-D float32 NumPy
+`quorin.serving.assemble(segment, entity_id)` returns a 1-D float32 NumPy
 array whose elements are laid out in the **declaration order** of
 `segment.schema.fields` — the order the user wrote the fields in their
 `FeatureSchema` subclass. The hash-sorted order used by `compile_schema` and
@@ -17,9 +17,9 @@ To support both orderings without an indirection in the inner loop,
 `SegmentLayout` carries two parallel structured arrays of the same
 `OFFSET_TABLE_DTYPE` shape:
 
-- `row_offset_table` — hash-sorted, used by `pyforge.layout.lookup` for
+- `row_offset_table` — hash-sorted, used by `quorin.layout.lookup` for
   O(log n) `searchsorted` against an entity ID's `name_hash`.
-- `assembly_table` — declaration-order, iterated by `pyforge.serving.assemble`
+- `assembly_table` — declaration-order, iterated by `quorin.serving.assemble`
   (and Step 5's Numba kernel) in a tight linear walk.
 
 Both are computed once at `compute_layout` time and stored frozen on the
@@ -72,7 +72,7 @@ need to keep them straight.
 - **Positive:** Step 5's Numba kernel iterates a contiguous structured
   array in declaration order with no per-field indirection — the SIMD-
   friendly form.
-- **Negative:** every reviewer of new code in `pyforge` must remember
+- **Negative:** every reviewer of new code in `quorin` must remember
   there are two tables. The naming carries the intent, and the pinned
   unit test catches accidental crosses.
 
@@ -86,7 +86,7 @@ Numba parity test will validate against.
 
 ## References
 
-- Pyforge spec, "Public API target" example showing
+- Quorin spec, "Public API target" example showing
   `vec = serving.assemble(...); model.predict(vec)`.
 - Step 1's `compile_schema` — the hash-sort that ADR-003 explicitly does
   not undo.

@@ -229,13 +229,6 @@ than modern desktops. Bare-metal extrapolation puts the number at 22–44
 methodology that supports the extrapolation. Honest beats heroic — we
 don't quote the number we wish we measured.
 
-**Why is the codebase named `quorin` but some docs say `Pyforge`?**
-"Pyforge" was the internal-development codename. The published package
-is `quorin`. The codename survives in the [ADR archive](docs/adr/), in
-[CLAUDE.md](CLAUDE.md), and in git history — historical records that
-appropriately reference the codename current at the time. Functionally
-identical.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).

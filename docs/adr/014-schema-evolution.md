@@ -10,7 +10,7 @@ is the last functional piece before benchmarks/docs: it lets an operator
 crashing live readers and without leaking shared-memory segments. After
 this step, the system survives a deploy.
 
-Spec acceptance criteria (from `pyforge_build_steps.md` Step 15):
+Spec acceptance criteria (from `quorin_build_steps.md` Step 15):
 
 1. **Live-reader test passes** — a thread looping `assemble` does NOT
    crash through an upgrade.
@@ -20,20 +20,20 @@ Spec acceptance criteria (from `pyforge_build_steps.md` Step 15):
 
 Three deliverables:
 
-1. **`pyforge.evolution.upgrade_schema(old, new, registry, …)`** — sync
-   Python callable + thin CLI (`python -m pyforge.evolution upgrade …`).
+1. **`quorin.evolution.upgrade_schema(old, new, registry, …)`** — sync
+   Python callable + thin CLI (`python -m quorin.evolution upgrade …`).
    Validates compatibility via `can_upgrade`, copies all rows via per-field
    VECTORIZED numpy translation through `insert_many`, atomically flips
-   `pyforge:schema:{name}:current` via a CAS Lua script, waits for the
+   `quorin:schema:{name}:current` via a CAS Lua script, waits for the
    first consumer to attach before exiting (so the watchdog doesn't
    race-destroy the upgrade).
 2. **Atomic flip Lua (`FLIP_SCHEMA_CURRENT_LUA`)** + token-checked
-   release Lua (`RELEASE_LOCK_LUA`) in `pyforge._internal.evolution_lua`,
+   release Lua (`RELEASE_LOCK_LUA`) in `quorin._internal.evolution_lua`,
    registered via `redis_client.register_script(...)` at orchestrator
    construction (Step 14 convention; redis-py uses EVALSHA after first
    call).
 3. **WAL consumer pause-and-reopen** in
-   `pyforge.wal_consumer.WALConsumer._check_upgrade_pause_and_reopen` —
+   `quorin.wal_consumer.WALConsumer._check_upgrade_pause_and_reopen` —
    the SAFETY NET that catches operators who failed to drain the
    consumer before upgrade. Combined with the `_apply` poison-pill
    handler (catches `ValueError` from `pack_row_from_list` length
@@ -48,8 +48,8 @@ Three deliverables:
    flip. Lua makes the read-and-conditional-write atomic. Returns 1
    (flipped), 0 (race lost), or -1 (current absent).
 
-2. **Lock + pause as separate keys.** `pyforge:upgrade:lock:{safe_name}`
-   is owned (token-checked release), `pyforge:upgrade:pause:{safe_name}`
+2. **Lock + pause as separate keys.** `quorin:upgrade:lock:{safe_name}`
+   is owned (token-checked release), `quorin:upgrade:pause:{safe_name}`
    is a flag (anyone-can-clear, idempotent). Different ownership
    semantics; conflating them would break either retry-safety or
    safety-net-clear-on-orchestrator-failure.
@@ -64,7 +64,7 @@ Three deliverables:
    if its cached class is stale relative to the new segment.
 
 4. **Reuse `insert_many` for the copy, not a custom kernel.** Step 13's
-   `pyforge._internal.insert_kernel.insert_many` is the tested,
+   `quorin._internal.insert_kernel.insert_many` is the tested,
    byte-parity-locked, Numba-jitted bulk-insert primitive. A custom
    shm-to-shm copy would duplicate ~400 lines of careful slot-table /
    string-pool / row-write logic. Per-field translation goes through
@@ -106,7 +106,7 @@ Three deliverables:
     `set_current=False`, `schema:current` still points at OLD throughout
     the upgrade. Deleting it on `_cleanup_orphan_new_segment` would orphan
     all live OLD readers. This is the load-bearing difference from
-    `pyforge.hydration._force_drop_orphan` (which DOES delete
+    `quorin.hydration._force_drop_orphan` (which DOES delete
     `schema:current` because hydrate's `create()` set it). Test
     `test_orphan_cleanup_does_not_delete_schema_current` is the binding
     regression.
@@ -124,11 +124,11 @@ Three deliverables:
 1. Deploy new schema code on producer + consumer hosts.
 2. SIGTERM all WAL **producers**. Wait for in-flight `WALProducer.write`
    calls to return.
-3. Wait for the WAL stream to drain: `XLEN pyforge:wal == 0` AND
-   `XPENDING pyforge:wal pyforge_consumers` returns 0.
+3. Wait for the WAL stream to drain: `XLEN quorin:wal == 0` AND
+   `XPENDING quorin:wal quorin_consumers` returns 0.
 4. SIGTERM the WAL **consumer** (graceful via `WALConsumer.stop()` →
    flush + XACK + exit). Liveness key TTLs out within 30 s.
-5. Run `python -m pyforge.evolution upgrade --redis ... --old ... --new ...
+5. Run `python -m quorin.evolution upgrade --redis ... --old ... --new ...
    --confirm`. Orchestrator's preconditions check XLEN/XPENDING/liveness;
    refuses with `UpgradeConflictError` if any tripped.
 6. Orchestrator copies + flips + waits for first attach (or `--no-wait`)
@@ -141,29 +141,29 @@ Three deliverables:
 **Recovery procedures:**
 
 - **Stuck pause** (consumer parks indefinitely): pause keys auto-expire in
-  600 s. Operator can `redis-cli DEL pyforge:upgrade:pause:{schema}` to
+  600 s. Operator can `redis-cli DEL quorin:upgrade:pause:{schema}` to
   clear early. Consumer's pause loop re-evaluates on next poll.
 - **Stuck lock**: lock auto-expires in 600 s. Break early via
-  `redis-cli DEL pyforge:upgrade:lock:{schema}` after confirming no live
+  `redis-cli DEL quorin:upgrade:lock:{schema}` after confirming no live
   orchestrator.
 - **Consumer-attach timeout warning**: orchestrator emitted
   `evolution.consumer_attach_timeout` and exited. Operator must start a
-  consumer within ~150 s OR run `redis-cli DEL pyforge:schema:{name}:current`
+  consumer within ~150 s OR run `redis-cli DEL quorin:schema:{name}:current`
   to abort + re-run upgrade after starting a consumer.
 - **Stuck schema:current pointing at orphaned new segment** (operator
   killed orchestrator after flip but before any consumer attached, AND
   watchdog hasn't reaped yet): wait 150 s for watchdog OR
-  `redis-cli DEL pyforge:schema:{name}:current` + watchdog drain manually.
-- **`pyforge_wal_consumer_schema_crc_mismatch_total > 0`**: consumer
+  `redis-cli DEL quorin:schema:{name}:current` + watchdog drain manually.
+- **`quorin_wal_consumer_schema_crc_mismatch_total > 0`**: consumer
   cached an OLD schema class. Operator forgot step 1 of the workflow
   (deploy new code). Restart consumer with new code; PEL retry will
   succeed against the NEW segment.
-- **`pyforge_wal_consumer_poison_pill_total > 0`** correlated with
+- **`quorin_wal_consumer_poison_pill_total > 0`** correlated with
   `XPENDING > 0`: stale producer wrote during pause window. Restart
   producer with new code; manually XACK the poisoned message-IDs OR
   XADD-replay-and-XACK them to clear PEL.
 - **Two-segments-coexist explanation**: this is normal during the
-  transition window. Both `pyforge_X_v1_*` and `pyforge_X_v2_*` may exist
+  transition window. Both `quorin_X_v1_*` and `quorin_X_v2_*` may exist
   in `/dev/shm` for ~150 s + drain time as old holders close.
 
 ## Step 16b amendment: 1M evolution bench is operator-verified, NOT CI-verified
@@ -180,7 +180,7 @@ analysis + per-bench peak table; not duplicated here to avoid drift.
 of record is the Step 15 progress entry's WSL2 single-sample (9.91 s, 90 ms
 margin under the gate). Future operator runs on workstations with adequate
 `/dev/shm` append to the record. The bench gates on
-`PYFORGE_RUN_RECORD_BENCH=1` AND `PYFORGE_RUN_LARGE_SHM_BENCH=1` so it skips
+`QUORIN_RUN_RECORD_BENCH=1` AND `QUORIN_RUN_LARGE_SHM_BENCH=1` so it skips
 cleanly on CI `schedule` events; the workflow sets the LARGE_SHM var only
 on `workflow_dispatch`. The 10 s contract lives in the bench docstring
 (`benchmarks/test_evolution_benchmark.py::test_bench_upgrade_1m_50_field`)
@@ -218,7 +218,7 @@ and the trip-wire fires there.
   lifted in Step 17 alongside public-API consolidation.
 - **Variable lock TTL via env var**: v1 hardcodes 600 s.
 - **Producer-side pause symmetry**: out of scope for v1. Producers are
-  drained by operator stop. A `pyforge:upgrade:pause:producer:*` key +
+  drained by operator stop. A `quorin:upgrade:pause:producer:*` key +
   `WALProducer.write` precondition check is a Step 16+ improvement if
   partial-drain failures are observed in practice.
 
