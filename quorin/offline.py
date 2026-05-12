@@ -47,7 +47,31 @@ from quorin.metrics import (
     offline_read_rows,
     offline_read_seconds,
 )
-from quorin.schema import FeatureSchema
+from quorin.schema import _SCHEMA_NAME_PATTERN, FeatureSchema
+
+
+def _validate_schema_name_for_path(schema: type[FeatureSchema]) -> str:
+    """Defense-in-depth re-check at the Parquet write boundary (CR.C.1).
+
+    ``FeatureSchema.__init_subclass__`` validates ``cls.__name__`` at
+    class-definition time (CR.A.6), but ``cls.__name__`` is a writable
+    attribute — a caller doing ``Foo.__name__ = "../etc/passwd"`` after
+    class definition would slip past that check and the runtime
+    ``cls.__name__`` would flow into both ``schema=...`` partition path
+    construction and the read-side ``schema_dir`` lookup. Re-validating
+    at the path boundary is the single out-of-process trust-boundary
+    crossing in Quorin (single-machine model otherwise — see ADR-018).
+    """
+    name = schema.__name__
+    if not _SCHEMA_NAME_PATTERN.match(name):
+        raise ValueError(
+            f"schema.__name__ {name!r} is invalid for filesystem path "
+            "construction: must match ^[A-Za-z][A-Za-z0-9_]{0,62}$. "
+            "This typically indicates ``cls.__name__`` was mutated "
+            "after class definition (CR.A.6 / CR.C.1 / ADR-018)."
+        )
+    return name
+
 
 _DAY_NS: Final[int] = 86_400_000_000_000
 """Nanoseconds per UTC day. Used as the day-quantum key for the
@@ -278,11 +302,22 @@ class ParquetDatasetStore:
         # dashboards (Rev-4 polish #2).
         snapshot = {k: v for k, v in self._buffers.items() if v.entity_id_col}
         # Reset BEFORE any I/O so cancellation has nothing in-flight to
-        # clean up (ADR-010 §5).
+        # clean up (ADR-010 §5). CR.A.2 (v0.1.1) widens the contract:
+        # cancellation/exception MUST restore unwritten buckets to
+        # self._buffers so deferred-XACK durability (ADR-009 §3) is
+        # preserved — pre-v0.1.1 a mid-loop exception silently dropped
+        # buckets K..N while online-store XACK still fired.
         self._buffers = {}
         if not snapshot:
             return
         t0 = time.perf_counter()
+        # Track which (schema, date_str) keys have been written durably
+        # so partial-failure restore touches only the unwritten subset.
+        # `setdefault` on restore protects against the (defensive) case
+        # where a new bucket got appended during the loop window — even
+        # though the loop is sync today, the pattern survives future
+        # async I/O additions.
+        written: set[tuple[type[FeatureSchema], str]] = set()
         try:
             total_rows = 0
             for (schema, date_str), bucket in snapshot.items():
@@ -291,12 +326,28 @@ class ParquetDatasetStore:
                 self._write_table(schema, date_str, table)
                 self._c_files_by_schema[schema].inc()
                 total_rows += len(bucket.entity_id_col)
+                written.add((schema, date_str))
             offline_flush_rows.observe(total_rows)
             self._h_flush_ok.observe(time.perf_counter() - t0)
         except asyncio.CancelledError:
+            # CR.A.2: restore unwritten buckets. The pre-v0.1.1
+            # "cancellation has nothing to clean up" design lost data
+            # here — the deferred-XACK contract requires unwritten
+            # buckets to survive into the next flush attempt.
+            for key, bucket in snapshot.items():
+                if key not in written:
+                    self._buffers.setdefault(key, bucket)
             self._h_flush_cancelled.observe(time.perf_counter() - t0)
             raise
         except Exception:
+            # CR.A.2: same gate as cancellation. Partial-write failure
+            # leaves successful buckets durable on disk and K+1..N
+            # unwritten in self._buffers, awaiting next flush. Caller
+            # (_flush_and_ack in wal_consumer.py) catches the raise and
+            # skips XACK — consumer's deferred-XACK invariant preserved.
+            for key, bucket in snapshot.items():
+                if key not in written:
+                    self._buffers.setdefault(key, bucket)
             self._h_flush_err.observe(time.perf_counter() - t0)
             raise
 
@@ -309,7 +360,10 @@ class ParquetDatasetStore:
         is unlinked so ``_tmp/`` can't accumulate orphans across long-
         running deployments (Rev-4 polish #1).
         """
-        partition_dir = self._base / f"schema={schema.__name__}" / f"event_date={date_str}"
+        # CR.C.1: validate schema.__name__ here in case a caller mutated
+        # cls.__name__ post-class-definition (slips past CR.A.6's check).
+        safe_name = _validate_schema_name_for_path(schema)
+        partition_dir = self._base / f"schema={safe_name}" / f"event_date={date_str}"
         partition_dir.mkdir(parents=True, exist_ok=True)
         file_uuid = uuid.uuid4().hex
         tmp_path = self._tmp_dir / f"{file_uuid}.parquet"
@@ -387,7 +441,9 @@ class ParquetDatasetStore:
         for the empty-result short-circuit. Genuine data corruption
         (``ArrowInvalid``) propagates as a bug signal — see ADR-011 §K.
         """
-        schema_dir = self._base / f"schema={schema.__name__}"
+        # CR.C.1: same defense-in-depth as the write path.
+        safe_name = _validate_schema_name_for_path(schema)
+        schema_dir = self._base / f"schema={safe_name}"
         try:
             dataset = ds.dataset(schema_dir, format="parquet", partitioning="hive")
         except FileNotFoundError:

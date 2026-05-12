@@ -69,6 +69,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import struct
 import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Protocol
@@ -77,6 +78,7 @@ import msgpack  # type: ignore[import-untyped]
 import redis.exceptions
 
 from quorin import layout
+from quorin._internal.redis_compat import warn_if_no_socket_timeout
 from quorin._internal.row_pack import pack_row_from_list
 from quorin.logging import get_logger
 from quorin.metrics import (
@@ -310,6 +312,12 @@ class WALConsumer:
         flush_interval_seconds: float = DEFAULT_FLUSH_INTERVAL_SECONDS,
         max_pending_ack: int = DEFAULT_MAX_PENDING_ACK,
     ) -> None:
+        # CR.E.6 (v0.1.1): warn if the async client lacks socket_timeout.
+        # XREADGROUP block waits + offline.flush()'s implicit Redis ops
+        # can hang the consumer task indefinitely on partition; the
+        # liveness key would expire 30s later and the watchdog would
+        # then declare the host dead.
+        warn_if_no_socket_timeout(redis_client, source="WALConsumer")
         # Validate the segments map: name-vs-class consistency catches the
         # one footgun the API otherwise allows.
         for name, seg in segments.items():
@@ -849,23 +857,34 @@ class WALConsumer:
             row_buffer = self._row_buffers[schema_name]
             try:
                 pack_row_from_list(schema, values_list, row_buffer)
-            except ValueError as e:
-                # Step 15 poison-pill: pack_row_from_list raised on length
-                # mismatch (verified raise behavior in row_pack.py:172-173).
-                # A stale producer (running OLD schema) wrote during the
-                # upgrade window; consumer (running NEW schema) decodes
-                # against NEW field count, length mismatches.
-                # Do NOT XACK — message stays in PEL so XPENDING reflects
-                # the issue and operators see the binary alert signal.
+            except (ValueError, OverflowError, struct.error) as e:
+                # Step 15 poison-pill, widened in v0.1.1 (CR.A.1).
+                # Three failure modes are all "stale/incompatible producer":
+                #   - ValueError: length mismatch from pack_row_from_list
+                #     (row_pack.py:172) — most common, OLD producer wrote
+                #     during upgrade window with fewer/more fields than
+                #     the consumer's NEW schema.
+                #   - OverflowError: float value outside the destination
+                #     dtype's representable range (e.g. 1e40 packed as
+                #     '<f'). v0.1.1 also tightens the producer's pydantic
+                #     validation but non-pydantic producers can still hit
+                #     this at the consumer.
+                #   - struct.error: int value outside the destination
+                #     int dtype's range. Same shape as OverflowError.
+                # All three: do NOT XACK — message stays in PEL so
+                # XPENDING reflects the issue and operators see the
+                # binary alert signal via wal_consumer_poison_pill_total.
                 logger.error(
                     "wal_consumer.poison_pill_format_mismatch",
                     msg_id=msg_id.decode("ascii", "replace"),
                     schema=schema_name.decode("utf-8", "replace"),
                     error=str(e),
+                    error_type=type(e).__name__,
                     msg=(
-                        "Stale producer wrote message with old schema "
-                        "during upgrade. Message stays in PEL; restart "
-                        "producer with new schema code, then drain PEL."
+                        "Stale or non-conforming producer wrote a message "
+                        "the consumer's schema cannot pack. Message stays "
+                        "in PEL; verify producer code matches consumer "
+                        "schema, then drain PEL."
                     ),
                 )
                 self._c_poison_pill.inc()

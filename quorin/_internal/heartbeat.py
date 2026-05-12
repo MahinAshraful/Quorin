@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Final
 import psutil  # type: ignore[import-untyped]
 import redis as _redis
 
+from quorin._internal.redis_compat import warn_if_no_socket_timeout
 from quorin.logging import get_logger
 from quorin.metrics import heartbeat_age_seconds, heartbeat_writes_total
 
@@ -86,6 +87,12 @@ class _State:
 
 
 _state = _State()
+# Module-level lock guarding _state mutation. CR.B.10 (v0.1.1): if a
+# parent thread is mid-``ensure_started``'s ``with _state_lock:`` when
+# fork() runs, the child inherits a held lock that will never be
+# released — child's first ensure_started deadlocks. _reset_after_fork
+# replaces this object with a fresh Lock(). Module-level rebinding is
+# safe in the fork-hook (fork hooks run before child code resumes).
 _state_lock = threading.Lock()
 
 
@@ -114,6 +121,10 @@ def ensure_started(redis_client: redis_lib.Redis, pid: int | None = None) -> Non
     anyway. The first successful periodic write (10 s later) is the
     implicit "alive" signal to the watchdog.
     """
+    # CR.E.6 (v0.1.1): warn if the caller's redis_client lacks a finite
+    # socket_timeout. Heartbeat HSET on a partitioned client can block
+    # indefinitely; stop()'s 2s join will time out and leak the thread.
+    warn_if_no_socket_timeout(redis_client, source="heartbeat.ensure_started")
     with _state_lock:
         if _state.thread is not None and _state.thread.is_alive():
             return
@@ -261,7 +272,16 @@ def _reset_after_fork() -> None:
     Clears EVERY field: any post-fork code reading ``_state.*`` must
     fail loud (None) rather than silently use parent's values. Child's
     first :func:`ensure_started` re-allocates everything.
+
+    CR.B.10 (v0.1.1): also rebind ``_state_lock`` to a fresh
+    :class:`threading.Lock`. If the parent was holding the lock at fork
+    time (e.g. another thread was mid-``ensure_started``), the child
+    would inherit it as held — child's ``with _state_lock:`` would
+    deadlock forever. Rebinding here breaks the inheritance. Safe
+    because fork hooks run before child code resumes; no thread can
+    observe the old vs new lock atomically.
     """
+    global _state_lock  # noqa: PLW0603 — module-level lock rebinding is the entire point.
     _state.thread = None
     _state.stop_event = None
     _state.pid = None
@@ -269,6 +289,7 @@ def _reset_after_fork() -> None:
     _state.redis_client = None
     _state.labels_writes_ok = None
     _state.labels_writes_redis_error = None
+    _state_lock = threading.Lock()
 
 
 os.register_at_fork(after_in_child=_reset_after_fork)

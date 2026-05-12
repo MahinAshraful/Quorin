@@ -49,8 +49,23 @@ insurance, and the parity test ensures they cannot silently diverge.
   mode. Alignment-safe by construction: every field offset is 64-byte
   cache-line aligned (Step 1 invariant).
 - **`fastmath=False` is non-negotiable.** Fastmath licenses LLVM to assume no
-  NaN/inf, which would break NaN bit-pattern parity with the Python oracle.
-  Memory-bound assembly wouldn't benefit from fastmath anyway.
+  NaN/inf, which would break the byte-identical parity contract with the
+  Python oracle. Memory-bound assembly wouldn't benefit from fastmath anyway.
+
+  **What "byte-identical NaN parity" actually guarantees** (CR.B.7
+  amendment): both paths preserve **NaN-ness** (any NaN input produces a
+  NaN output). Quiet-NaN (qNaN) bit patterns round-trip byte-identically
+  through both the Python oracle and the Numba kernel. **Signaling-NaN
+  (sNaN) bit patterns may be canonicalized to qNaN by the x86 FP unit on
+  load through a float32 register** (this is hardware behavior, not a
+  Quorin choice — `MOVSS` / `CVTSS2SD` / float-arithmetic on a sNaN
+  generates the equivalent qNaN). Both paths perform an `np.float32(x)`
+  cast through that same load, so they canonicalize identically: parity
+  holds because divergence between paths is what the test pins, not raw
+  sNaN preservation. Callers needing sNaN bit-pattern fidelity (very
+  rare in ML feature serving — sNaN is typically used as a "missing"
+  sentinel where canonicalization-to-qNaN is fine) should not assume
+  Quorin preserves them.
 - **Explicit Numba signature** for fast cold compile and a single
   specialization. `[::1]` (C-contiguous) gives Numba freedom to vectorize
   inner loops.

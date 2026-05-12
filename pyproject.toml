@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quorin"
-version = "0.1.0"
+version = "0.1.1"
 description = "Low-latency ML feature serving via shared memory."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,8 +14,16 @@ keywords = [
   "machine-learning",
   "feature-store",
   "feature-serving",
+  "online-inference",
   "shared-memory",
+  "ipc",
+  "posix-ipc",
   "low-latency",
+  "numba",
+  "pyarrow",
+  "redis-streams",
+  "wal",
+  "ml-platform",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -34,7 +42,11 @@ dependencies = [
   "pyarrow>=14.0,<15.0",
   "redis>=5.0,<6.0",
   "pydantic>=2.5,<3.0",
-  "psutil>=5.9",
+  # CR.B.11: pin psutil <6.0. The watchdog's correctness foundation is
+  # `psutil.Process(pid).create_time()` for PID-reuse detection. Cross-major
+  # divergence in create_time semantics could silently break the dead-PID
+  # cleanup path. Pin tight; widen after verifying compatibility on >=6.0.
+  "psutil>=5.9,<6.0",
   "structlog>=24.0",
   "prometheus-client>=0.19",
   "msgpack>=1.0,<2.0",
@@ -66,6 +78,12 @@ Changelog     = "https://github.com/MahinAshraful/Quorin/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["quorin"]
+# CR.H.8 (v0.1.1): explicitly include py.typed marker so downstream
+# consumers' mypy --strict picks up our type information. ``packages``
+# above already pulls everything in the directory, but listing it
+# here is the documented hatchling pattern + survives any future
+# include/exclude pruning.
+include = ["quorin/py.typed"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -82,6 +100,15 @@ markers = [
   "slow: long-running",
 ]
 asyncio_mode = "auto"
+# CR.E.6 / v0.1.1: silence the socket_timeout UserWarning from test
+# fixtures that intentionally construct minimal Redis clients (chaos
+# subprocess code, third-party-style tests). Production users still
+# see the warning at WALProducer / WALConsumer / heartbeat
+# construction; tests don't need to mirror the production-correct
+# pattern in every fixture (the central conftest fixture already does).
+filterwarnings = [
+  "ignore:.*socket_timeout configured.*:UserWarning",
+]
 
 [tool.coverage.run]
 source = ["quorin"]

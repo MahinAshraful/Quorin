@@ -22,10 +22,12 @@ Linux/WSL2 only. Importing this module on native Windows fails because
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import re
 import struct
 import uuid
+import warnings
 from dataclasses import dataclass
 from typing import Final, cast
 
@@ -104,6 +106,62 @@ def _key_pid_segments(pid: int) -> str:
 
 KEY_CLEANUP_QUEUE: Final[str] = "quorin:cleanup_queue"
 
+# CR.D.5 (v0.1.1): refuse to allocate a segment that would consume more
+# than this fraction of currently-free /dev/shm. Operators expect this
+# guard from the README's "fail loud, not at runtime" theme; it surfaces
+# disk-pressure issues at create() rather than letting posix_shm.create
+# succeed and the next mmap fault crash the process. Set to 0.5 = 50%.
+_DEV_SHM_RESERVE_FRACTION: Final[float] = 0.5
+_DEV_SHM_PATH: Final[str] = "/dev/shm"
+
+
+def _check_dev_shm_capacity(total_size_bytes: int) -> None:
+    """Refuse the allocation if it would exceed 50% of free /dev/shm.
+
+    Raises :class:`OSError` with ``errno=ENOSPC`` and a clear message
+    when the request is too large. Matches POSIX shm kernel semantics
+    (``shm_open`` would have raised ENOSPC anyway, just at a less
+    legible spot — typically a SIGBUS on the next mmap fault).
+
+    On systems without ``/dev/shm`` (rare; non-Linux POSIX, container
+    sandboxes), :func:`os.statvfs` raises :class:`FileNotFoundError`.
+    We catch and emit a :class:`UserWarning`, then return — the
+    subsequent ``posix_shm.create`` will fail with its own clearer
+    error per invariant #9 (Linux/WSL2 only). Don't mask the
+    wrong-platform signal by raising here.
+    """
+    try:
+        st = os.statvfs(_DEV_SHM_PATH)
+    except FileNotFoundError:
+        warnings.warn(
+            f"{_DEV_SHM_PATH} not found; skipping capacity guard. "
+            "Quorin requires Linux/WSL2 per invariant #9. The next "
+            "posix_shm.create call will fail with the platform-level "
+            "error.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return
+    # f_bavail counts blocks available to non-privileged users; this is
+    # the right measure for "what can we allocate." f_bfree includes
+    # reserved-for-root blocks which we wouldn't get.
+    free_bytes = int(st.f_bavail) * int(st.f_frsize)
+    cap = int(free_bytes * _DEV_SHM_RESERVE_FRACTION)
+    if total_size_bytes > cap:
+        raise OSError(
+            errno.ENOSPC,
+            (
+                f"Refusing to allocate {total_size_bytes:,} bytes in "
+                f"{_DEV_SHM_PATH}: would exceed "
+                f"{int(_DEV_SHM_RESERVE_FRACTION * 100)}% of free space "
+                f"({free_bytes:,} bytes free; cap "
+                f"{cap:,} bytes). Free more /dev/shm space, reduce "
+                "segment capacity, or shard across multiple Quorin "
+                "instances."
+            ),
+        )
+
+
 # Step 14: sidetable so the watchdog can clear ``quorin:schema:{name}:current``
 # pointers without an O(N keyspace) ``KEYS`` scan. Written by
 # :meth:`SegmentRegistry.create`, read + cleared by the watchdog's dead-PID
@@ -155,6 +213,7 @@ if tonumber(n) <= 0 then
         end
         redis.call('HDEL', KEYS[4], ARGV[1])
     end
+    redis.call('DEL', KEYS[1])
 end
 redis.call('SREM', KEYS[2], ARGV[1])
 return n
@@ -204,6 +263,12 @@ class SegmentRegistry:
         # call wins, subsequent calls return immediately.
         heartbeat.ensure_started(self._redis, os.getpid())
         layout = compute_layout(schema, capacity=capacity, max_id_bytes=max_id_bytes)
+        # CR.D.5 (v0.1.1): refuse before posix_shm.create if /dev/shm
+        # is too full. Surfaces disk-pressure issues at create() rather
+        # than letting the segment allocation succeed and SIGBUS on the
+        # next mmap fault. Raises OSError(ENOSPC) — no new public
+        # exception class.
+        _check_dev_shm_capacity(layout.total_size)
         name = _segment_name(schema)
         handle = posix_shm.create(name, layout.total_size)
         try:

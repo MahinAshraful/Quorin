@@ -594,9 +594,17 @@ async def test_event_time_far_future_yields_valid_partition(
 # ---------------------------------------------------------------------------
 
 
-async def test_cancellation_during_flush_clears_buffers_and_records_metric(
+async def test_cancellation_during_flush_restores_buffers_and_records_metric(
     store: ParquetDatasetStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """CR.A.2 (v0.1.1): cancellation mid-flush MUST restore unwritten
+    buckets to ``self._buffers`` so the deferred-XACK durability
+    contract (ADR-009 §3) holds.
+
+    Pre-v0.1.1 behavior was "buffers cleared on entry, cancellation
+    drops everything" — that lost data because XACK fired on online-
+    store success but offline data was gone.
+    """
     import quorin.offline as offline_mod
 
     cancelled_before = _histogram_count(offline_flush_seconds, outcome="cancelled")
@@ -608,8 +616,11 @@ async def test_cancellation_during_flush_clears_buffers_and_records_metric(
     await store.append(_S, "ent-0", 0, [1.0, 2], b"1-0")
     with pytest.raises(asyncio.CancelledError):
         await store.flush()
-    # Buffers cleared on entry to flush; CancelledError dropped them.
-    assert store._buffers == {}
+    # CR.A.2: buffer for the un-written bucket MUST be restored.
+    assert store._buffers, "unwritten bucket must be restored on cancellation"
+    # Verify the restored bucket has the row we appended.
+    only_bucket = next(iter(store._buffers.values()))
+    assert only_bucket.entity_id_col == ["ent-0"]
     cancelled_after = _histogram_count(offline_flush_seconds, outcome="cancelled")
     assert cancelled_after - cancelled_before == 1
 
@@ -642,8 +653,12 @@ async def test_disk_full_oserror_records_metric_and_unlinks_tmp(
     await store.append(_S, "ent-0", 0, [1.0, 2], b"1-0")
     with pytest.raises(OSError, match="disk full"):
         await store.flush()
-    # Buffers dropped (snapshot path).
-    assert store._buffers == {}
+    # CR.A.2 (v0.1.1): unwritten buckets restored to self._buffers so
+    # the next flush retries them. Pre-v0.1.1 silently dropped them
+    # while online-store XACK still fired — data loss.
+    assert store._buffers, "unwritten bucket must be restored on disk-full"
+    only_bucket = next(iter(store._buffers.values()))
+    assert only_bucket.entity_id_col == ["ent-0"]
     err_after = _histogram_count(offline_flush_seconds, outcome="error")
     assert err_after - err_before == 1
     # The tmp file we touched in the fake should have been unlinked
@@ -652,6 +667,78 @@ async def test_disk_full_oserror_records_metric_and_unlinks_tmp(
     assert all(not p.exists() for p in captured_tmp_paths)
     # Restore the real write_table so other tests aren't affected.
     monkeypatch.setattr(offline_mod.pq, "write_table", real_write)
+
+
+async def test_partial_flush_failure_restores_only_unwritten_buckets(
+    store: ParquetDatasetStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CR.A.2 (v0.1.1): when ``_write_table`` succeeds for the first
+    K of N buckets and fails for the K-th, only buckets K..N are
+    restored to ``self._buffers``. The first K were durable to disk
+    and ARE NOT re-buffered (no double-write).
+    """
+    import quorin.offline as offline_mod
+
+    # Two distinct schemas → two distinct (schema, date_str) buckets.
+    await store.append(_SchemaA, "ent-a", 0, [1.5], b"1-0")
+    await store.append(_SchemaB, "ent-b", 0, [2.5], b"1-1")
+    assert len(store._buffers) == 2, "setup: two buckets seeded"
+
+    # Fake write_table: succeeds for the first call, fails for the second.
+    real_write = offline_mod.pq.write_table
+    call_count = {"n": 0}
+
+    def selective_write(table: Any, path: Any, **kwargs: Any) -> None:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            real_write(table, path, **kwargs)
+            return
+        # Touch a partial tmp so the cleanup branch fires (mirrors the
+        # disk-full test's pattern); then raise OSError.
+        Path(path).write_bytes(b"partial")
+        raise OSError("disk full on second bucket")
+
+    monkeypatch.setattr(offline_mod.pq, "write_table", selective_write)
+    with pytest.raises(OSError, match="disk full on second bucket"):
+        await store.flush()
+    # The first bucket is durable — must NOT be in _buffers.
+    # The second bucket failed — MUST be in _buffers for the next flush.
+    assert len(store._buffers) == 1, "exactly the unwritten bucket should be restored"
+    surviving_bucket = next(iter(store._buffers.values()))
+    # Don't assume which schema dict-iteration ordered — assert the
+    # survivor is one of the two and has its row.
+    assert surviving_bucket.entity_id_col in (["ent-a"], ["ent-b"])
+    monkeypatch.setattr(offline_mod.pq, "write_table", real_write)
+
+
+async def test_runtime_name_mutation_rejected_at_write(
+    store: ParquetDatasetStore,
+) -> None:
+    """CR.C.1 (v0.1.1): defense-in-depth. ``FeatureSchema.__init_subclass__``
+    validates ``cls.__name__`` at class-definition time (CR.A.6), but
+    ``cls.__name__`` is writable. A caller that does
+    ``Schema.__name__ = "../etc/passwd"`` after class definition would
+    slip past CR.A.6 and the runtime name would flow into Parquet path
+    construction. Re-validating at the write boundary is the binding
+    defense.
+
+    NOTE: we mutate via direct attribute assignment, then restore at end
+    so other tests aren't affected by the polluted ``__name__``.
+    """
+
+    class _ToBeMutated(FeatureSchema):
+        version = 1
+        fields = [FeatureField("a", dtype.float32)]
+
+    # Append succeeds (append doesn't read __name__ for path-building).
+    await store.append(_ToBeMutated, "ent-0", 0, [1.0], b"1-0")
+    saved_name = _ToBeMutated.__name__
+    try:
+        _ToBeMutated.__name__ = "../etc/passwd"  # path-traversal attempt
+        with pytest.raises(ValueError, match="invalid for filesystem path"):
+            await store.flush()
+    finally:
+        _ToBeMutated.__name__ = saved_name
 
 
 # ---------------------------------------------------------------------------

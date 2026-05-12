@@ -283,6 +283,88 @@ def test_reset_after_fork_clears_every_state_field(mock_client: MagicMock) -> No
     assert heartbeat._state.labels_writes_redis_error is None
 
 
+def test_reset_after_fork_rebinds_state_lock() -> None:
+    """CR.B.10 (v0.1.1): ``_reset_after_fork`` MUST rebind ``_state_lock``
+    to a fresh :class:`threading.Lock`.
+
+    The bug: if the parent thread is mid-``ensure_started``'s
+    ``with _state_lock:`` block when ``fork()`` runs, the child inherits
+    the lock as held — child's first ``ensure_started`` would deadlock
+    forever. Rebinding the lock in the fork hook breaks that
+    inheritance.
+
+    Direct-test version (no actual fork): assert the post-reset lock is
+    a different object than the pre-reset lock, proving rebinding
+    happened. The ``test_reset_after_fork_rebinds_state_lock_via_fork``
+    below is the multiprocessing-actual version that catches a
+    regression where the rebind silently no-op'd.
+    """
+    pre_reset_lock = heartbeat._state_lock
+    heartbeat._reset_after_fork()
+    post_reset_lock = heartbeat._state_lock
+    assert post_reset_lock is not pre_reset_lock, (
+        "fork hook must rebind _state_lock to break held-lock inheritance"
+    )
+    # Sanity: the new lock is acquirable (i.e., not held).
+    assert post_reset_lock.acquire(blocking=False), (
+        "freshly rebound lock should be unheld and immediately acquirable"
+    )
+    post_reset_lock.release()
+
+
+def _child_acquire_lock_and_report(result_path: str) -> None:
+    """Top-level helper for test_reset_after_fork_rebinds_state_lock_via_fork.
+
+    Top-level (not a closure) so the multiprocessing fork target is
+    picklable for spawn-style starts as well — defensive even though
+    we explicitly request the fork context.
+    """
+    from pathlib import Path
+
+    from quorin._internal import heartbeat as hb
+
+    acquired = hb._state_lock.acquire(timeout=2.0)
+    if acquired:
+        hb._state_lock.release()
+    # Communicate result via a tempfile (Queue would itself need a Manager
+    # which forks again; simpler to use a sentinel file).
+    Path(result_path).write_text("acquired\n" if acquired else "deadlocked\n")
+
+
+def test_reset_after_fork_rebinds_state_lock_via_fork(tmp_path: object) -> None:
+    """CR.B.10 actual-fork regression: parent holds the lock at fork
+    time; child must NOT inherit it as held.
+
+    This is the binary check. If ``_reset_after_fork`` ever stops
+    rebinding ``_state_lock``, child blocks forever on ``acquire`` and
+    the test sees ``"deadlocked"`` in the result file.
+    """
+    from pathlib import Path
+
+    result_path_obj = tmp_path / "child_result.txt"  # type: ignore[operator]
+    result_path = str(result_path_obj)
+
+    # Acquire in PARENT — simulates a parent thread mid-ensure_started.
+    heartbeat._state_lock.acquire()
+    try:
+        ctx = multiprocessing.get_context("fork")
+        proc = ctx.Process(
+            target=_child_acquire_lock_and_report,
+            args=(result_path,),
+        )
+        proc.start()
+        proc.join(timeout=5.0)
+        assert proc.exitcode == 0, f"child exited unexpectedly: {proc.exitcode}"
+        assert not proc.is_alive(), "child still alive after join — likely deadlocked"
+
+        result = Path(result_path).read_text().strip()
+        assert result == "acquired", (
+            f"child failed to acquire fresh lock post-fork (CR.B.10 regression): got {result!r}"
+        )
+    finally:
+        heartbeat._state_lock.release()
+
+
 # ---------------------------------------------------------------------------
 # MEDIUM-Rev4 #2: _loop captures local refs so stop-mid-HSET doesn't
 # AttributeError on a nulled module-level state.

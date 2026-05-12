@@ -9,8 +9,11 @@ The orchestrator's contract:
 1. Validate compatibility via :func:`can_upgrade` (no field removals, dtype
    widening only, monotonic version, shape unchanged for existing fields).
 2. Acquire ``quorin:upgrade:lock:{safe_name}`` (NX EX 600s).
-3. Verify the WAL stream is drained (XLEN == 0 AND XPENDING == 0) AND no
-   live consumer (``quorin:wal_consumer:liveness`` absent). The supported
+3. Verify the WAL consumer has caught up (XPENDING == 0) AND no live
+   consumer is running (``quorin:wal_consumer:liveness`` absent). XLEN
+   is intentionally NOT checked: XACK doesn't decrement XLEN, so a
+   healthy long-running stream sits at MAXLEN forever. Only XPENDING
+   reflects "consumer drain done." (CR.A.13 / ADR-018.) The supported
    workflow demands this; the pause+reopen logic in
    :class:`quorin.wal_consumer.WALConsumer` is a SAFETY NET, not a
    substitute. See ADR-014 §"Operator runbook".
@@ -61,6 +64,7 @@ import argparse
 import asyncio
 import contextlib
 import importlib
+import math
 import os
 import sys
 import time
@@ -253,6 +257,35 @@ def can_upgrade(
                 f"{new_f.dtype.name} is not a permitted widening"
             )
 
+    # CR.A.4 (v0.1.1): 2D-shape upgrades silently break in
+    # _build_translation_table — it constructs single-level
+    # FixedSizeListArray regardless of shape rank, then insert_kernel's
+    # rank-2 path does .flatten().flatten() which AttributeError's on
+    # the resulting primitive array. Reject upfront with a clear
+    # message until proper nested-list translation lands in v0.2.0.
+    #
+    # Two cases must be checked, NOT one:
+    # (1) Field present in OLD with 2D shape (also catches kept-name
+    #     2D fields that the loop above doesn't fault on because shape
+    #     is unchanged).
+    # (2) NEW added a 2D field that wasn't in OLD. The translation
+    #     table builds a column for new fields too (zero-filled for
+    #     missing data); insert_kernel's rank-2 path still fires.
+    for name, old_f in old_by_name.items():
+        if name in new_by_name and (len(old_f.shape) >= 2 or len(new_by_name[name].shape) >= 2):
+            reasons.append(
+                f"field {name!r}: 2D-shape upgrade not yet supported "
+                "(see CR.A.4 / ADR-018; deferred to v0.2.0). Workaround: "
+                "introduce a new 1D field and deprecate the 2D one."
+            )
+    for name, new_f in new_by_name.items():
+        if name not in old_by_name and len(new_f.shape) >= 2:
+            reasons.append(
+                f"field {name!r}: new 2D-shape field not yet supported "
+                "in upgrade (must be 1D until v0.2.0). Workaround: "
+                "hydrate the new 2D field into a fresh segment instead."
+            )
+
     return (not reasons, reasons)
 
 
@@ -314,6 +347,14 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
             "the version field is what changes."
         )
 
+    # CR.H.5 (v0.1.1): reject capacity_factor that would underflow (<= 0)
+    # or be non-finite. Lower-bound is enforced post-occupied-read by
+    # ``max(int(... * capacity_factor), occupied_count + 1)`` but a
+    # negative / NaN factor would either silently saturate to the
+    # occupied bound (swallowing operator intent) or do worse.
+    if not math.isfinite(capacity_factor) or capacity_factor <= 0.0:
+        raise ValueError(f"capacity_factor must be a finite float > 0, got {capacity_factor!r}")
+
     ok, reasons = can_upgrade(old_schema, new_schema)
     if not ok:
         raise UpgradeIncompatibleError(
@@ -346,21 +387,36 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
             f"upgrade already in progress for {schema_name_log!r} (lock held by {holder!r})"
         )
 
-    # 1b. WAL drain preconditions — XLEN AND XPENDING AND no liveness.
-    try:
-        wal_len_raw = redis_client.xlen(DEFAULT_STREAM_KEY)
-        wal_len = int(cast("Any", wal_len_raw) or 0)
-    except redis_lib.RedisError:
-        wal_len = 0
+    # 1b. WAL drain precondition — XPENDING + no consumer liveness.
+    # CR.A.13: XLEN is intentionally NOT checked. XACK does not decrement
+    # XLEN; only XTRIM/XDEL shrink the stream, and the producer's MAXLEN ~
+    # trim runs only on XADD with the ~ flag. After any meaningful
+    # production traffic, XLEN ≈ MAXLEN forever — so requiring XLEN==0
+    # rejects every real upgrade attempt and forces operators to manually
+    # XTRIM (undocumented in v0.1.0). PENDING is the correct measure:
+    # zero un-ACKed messages means the consumer caught up. See ADR-018.
     pending = 0
     try:
-        # XPENDING summary form: [count, min_id, max_id, [(consumer, count), ...]].
+        # XPENDING summary form return shape varies by redis-py version:
+        #   * redis-py 5+ wraps the response into a DICT
+        #     ``{'pending': N, 'min': ..., 'max': ..., 'consumers': [...]}``.
+        #   * Legacy versions / direct Redis-server replies are LISTs
+        #     ``[count, min_id, max_id, [(consumer, count), ...]]``.
+        # The cast("list[Any]") in v0.1.0 was wrong for redis-py 5; the
+        # latent bug was never exercised because the v0.1.0 precondition
+        # checked XLEN > 0 FIRST, and any traffic at all made XLEN > 0.
+        # CR.A.13 (v0.1.1) removed the XLEN short-circuit and surfaced
+        # this; handle both shapes defensively.
         # When the group doesn't exist yet, redis-py raises ResponseError.
         # ResponseError MUST be caught BEFORE RedisError (its parent class) —
         # same hierarchy gotcha as Step 14's ZombieProcess/NoSuchProcess.
         xp_raw = redis_client.xpending(DEFAULT_STREAM_KEY, DEFAULT_GROUP_NAME.encode("ascii"))
-        xp = cast("list[Any]", xp_raw)
-        pending = int(xp[0]) if xp else 0
+        if isinstance(xp_raw, dict):
+            pending = int(xp_raw.get("pending", 0))
+        elif isinstance(xp_raw, list) and xp_raw:
+            pending = int(xp_raw[0])
+        else:
+            pending = 0
     except redis_lib.ResponseError:
         # Group doesn't exist yet — no pending entries.
         pending = 0
@@ -368,12 +424,13 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
         # Connection issue — treat as 0; the liveness check below will
         # surface a truly broken Redis.
         pending = 0
-    if wal_len > 0 or pending > 0:
+    if pending > 0:
         with contextlib.suppress(Exception):
             release_script(keys=[lock_key], args=[lock_token])
         raise UpgradeConflictError(
-            f"WAL not drained: stream={wal_len} messages, PEL={pending} pending. "
-            "Drain producers + consumer before upgrade. See ADR-014 operator runbook."
+            f"WAL not drained: {pending} messages still pending consumer ACK. "
+            "Stop producers and wait for the consumer to drain (XPENDING == 0) "
+            "before upgrade. See ADR-014 operator runbook."
         )
     consumer_alive = redis_client.get(KEY_WAL_CONSUMER_LIVENESS) is not None
     if consumer_alive:
@@ -386,6 +443,18 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
 
     t0 = time.perf_counter()
     new_seg: Segment | None = None
+    old_seg: Segment | None = None
+    # CR.A.7: track old_seg's refcount lifecycle so the finally branch
+    # can close on any exception path without double-closing on success.
+    old_seg_closed = False
+    # CR.A.7 + post-flip safety: set True the moment the Lua CAS returns
+    # success. Before flip, new_seg is an in-progress orphan that SHOULD
+    # be cleaned up on exception. After flip, new_seg is LIVE production
+    # state — schema:current points at it, readers attach. Orphan-cleanup
+    # post-flip would force every reader's open_current retry to fail with
+    # SegmentNotFoundError until manual intervention. The flag is the
+    # binary signal that converts "orphan cleanup is safe" to "forbidden."
+    flip_completed = False
     consumer_pause_seconds = 0.0
     consumer_attach_seconds = 0.0
     try:
@@ -402,10 +471,13 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
         # Defense-in-depth: schema:current must still match old_seg.name.
         # (Hydrate refuses while schema:current exists, so concurrent hydrate
         # is impossible in practice — but verify anyway.)
+        # CR.A.5: handle both bytes (default redis client) and str
+        # (decode_responses=True). Prior code's `isinstance(current, bytes)`
+        # short-circuited to False on str clients, silently bypassing the
+        # mismatch branch.
         current = redis_client.get(_key_current(old_schema))
-        if current is None or (
-            isinstance(current, bytes) and current.decode("utf-8") != old_seg.name
-        ):
+        current_str = current.decode("utf-8") if isinstance(current, bytes) else current
+        if current_str != old_seg.name:
             raise UpgradeConflictError(
                 f"schema:current changed under us: expected {old_seg.name!r}, got {current!r}"
             )
@@ -454,6 +526,9 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
             raise UpgradeConflictError(
                 "schema:current was deleted during upgrade (operator interference?)"
             )
+        # CR.A.7: flip succeeded. From here on, new_seg is LIVE — exception
+        # branches MUST NOT call _cleanup_orphan_new_segment on it.
+        flip_completed = True
 
         # 8. Clear pause key FIRST so consumers can begin reopen.
         consumer_pause_seconds = time.perf_counter() - t0
@@ -493,6 +568,7 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
         #     conditional sees current=new_name ≠ old_name → does NOT delete
         #     schema:current.
         registry.close(old_seg)
+        old_seg_closed = True  # CR.A.7: prevent finally double-close.
 
         elapsed = time.perf_counter() - t0
         evolution_seconds.labels(outcome="ok").observe(elapsed)
@@ -526,17 +602,44 @@ def upgrade_schema(  # noqa: PLR0912, PLR0915 (orchestrator with sequential phas
     except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
         # Quiet propagation. Orphan cleanup before re-raise (no logger.exception
         # — operator-initiated cancel is not an "exception" in the forensic
-        # sense).
-        if new_seg is not None:
+        # sense). CR.A.7: only orphan-clean PRE-flip; post-flip new_seg is
+        # LIVE state.
+        if new_seg is not None and not flip_completed:
             _cleanup_orphan_new_segment(new_seg, redis_client, new_schema)
         raise
     except Exception:
         evolution_seconds.labels(outcome="err").observe(time.perf_counter() - t0)
         logger.exception("evolution.upgrade_failed", schema=schema_name_log)
-        if new_seg is not None:
+        # CR.A.7: same gate. If the failure landed AFTER the flip (e.g.
+        # registry.close(old_seg) raised), do NOT delete new_seg — it's
+        # production state. Log instead so operators know to inspect.
+        if new_seg is not None and not flip_completed:
             _cleanup_orphan_new_segment(new_seg, redis_client, new_schema)
+        elif new_seg is not None and flip_completed:
+            logger.error(
+                "evolution.post_flip_failure_new_segment_preserved",
+                new_segment=new_seg.name,
+                schema=schema_name_log,
+                msg=(
+                    "upgrade flip succeeded but post-flip cleanup raised; "
+                    "new segment is LIVE and was NOT orphan-cleaned. "
+                    "Inspect old_segment in /dev/shm if it persists after "
+                    "live readers should have closed (e.g., minutes after "
+                    "the upgrade completed) — that indicates a stuck "
+                    "refcount, not the live-readers-still-attached case "
+                    "which is expected briefly post-flip."
+                ),
+            )
         raise
     finally:
+        # CR.A.7: close old_seg if not already closed on success. The
+        # success-path close is at step 10; this finally handles all
+        # exception paths and the rare case where step 10 itself raised.
+        # contextlib.suppress because partial state already raising the
+        # primary exception — don't mask it with a close failure.
+        if old_seg is not None and not old_seg_closed:
+            with contextlib.suppress(Exception):
+                registry.close(old_seg)
         # Best-effort lock + pause release. Even if cleanup leaves the new
         # segment lingering, the watchdog reaps it in ~150s.
         with contextlib.suppress(Exception):

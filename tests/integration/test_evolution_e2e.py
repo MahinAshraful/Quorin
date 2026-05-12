@@ -16,6 +16,7 @@ Coverage (per plan §5.3):
 
 from __future__ import annotations
 
+import contextlib
 import struct
 import sys
 import threading
@@ -335,13 +336,37 @@ def test_e11_no_wait_returns_immediately(redis_client: redis.Redis) -> None:
 def test_upgrade_refuses_if_wal_stream_has_pending_messages(
     redis_client: redis.Redis,
 ) -> None:
-    """Plan §2.8 supported-workflow precondition #5."""
+    """CR.A.13 (v0.1.1): the WAL precondition is XPENDING > 0, NOT
+    XLEN > 0. XACK doesn't decrement XLEN (only XTRIM/XDEL do); after
+    any meaningful traffic, XLEN sits at MAXLEN forever and the v0.1.0
+    XLEN-based check rejected every production upgrade attempt.
+
+    This test verifies the NEW semantics: a message that's been
+    delivered to a consumer group but not yet XACKed (i.e. one that
+    appears in XPENDING) WILL block upgrade.
+    """
+    from quorin.wal_consumer import DEFAULT_GROUP_NAME
+
     registry = SegmentRegistry(redis_client)
     _populate_old_segment(registry, redis_client, n_rows=2)
-    # Write a fake message to the WAL stream so XLEN > 0.
-    redis_client.xadd(
-        b"quorin:wal", {b"schema": b"_IntE2EEvo", b"entity_id": b"x", b"blob": b"\x01"}
-    )
+    stream = b"quorin:wal"
+    group = DEFAULT_GROUP_NAME.encode("ascii")
+    consumer_name = b"test-consumer-pending"
+
+    # 1. Create the consumer group (id=0 reads from the start of the stream).
+    try:
+        redis_client.xgroup_create(stream, group, id=b"0", mkstream=True)
+    except redis.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+    # 2. XADD a message (XLEN += 1).
+    redis_client.xadd(stream, {b"schema": b"_IntE2EEvo", b"entity_id": b"x", b"blob": b"\x01"})
+    # 3. XREADGROUP without XACK → message moves into the consumer group's
+    #    PEL and XPENDING reports it. Skip explicit XPENDING shape
+    #    inspection (varies between dict and list across redis-py
+    #    versions); the assertion below — that upgrade_schema raises
+    #    UpgradeConflictError — is the property under test.
+    redis_client.xreadgroup(group, consumer_name, {stream: b">"}, count=1)
     try:
         with pytest.raises(UpgradeConflictError, match="WAL not drained"):
             upgrade_schema(
@@ -352,8 +377,64 @@ def test_upgrade_refuses_if_wal_stream_has_pending_messages(
                 wait_for_consumer=False,
             )
     finally:
-        # Drain the stream + drop schema:current.
-        redis_client.delete(b"quorin:wal")
+        # Drain the stream + group + drop schema:current.
+        with contextlib.suppress(redis.ResponseError):
+            redis_client.xgroup_destroy(stream, group)
+        redis_client.delete(stream)
+        _drop_current(redis_client)
+
+
+def test_upgrade_proceeds_when_xlen_positive_but_xpending_zero(
+    redis_client: redis.Redis,
+) -> None:
+    """CR.A.13 (v0.1.1) regression: a stream that's seen production
+    traffic and been fully drained (every message XACKed by some
+    consumer group) has XLEN > 0 but XPENDING == 0. v0.1.0 incorrectly
+    rejected this — operators couldn't upgrade after any traffic.
+    v0.1.1 lets it proceed.
+    """
+    from quorin.wal_consumer import DEFAULT_GROUP_NAME
+
+    registry = SegmentRegistry(redis_client)
+    _populate_old_segment(registry, redis_client, n_rows=2)
+    stream = b"quorin:wal"
+    group = DEFAULT_GROUP_NAME.encode("ascii")
+
+    # XADD raises XLEN. The stream itself is non-empty.
+    msg_id = redis_client.xadd(
+        stream, {b"schema": b"_IntE2EEvo", b"entity_id": b"x", b"blob": b"\x01"}
+    )
+    xlen_before_upgrade = int(redis_client.xlen(stream))
+    assert xlen_before_upgrade >= 1, "setup invariant: XLEN > 0"
+    # Simulate a fully-drained group: create + read + XACK.
+    try:
+        redis_client.xgroup_create(stream, group, id=b"0", mkstream=True)
+    except redis.ResponseError as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+    redis_client.xreadgroup(group, b"test-consumer-drained", {stream: b">"}, count=1)
+    redis_client.xack(stream, group, msg_id)
+    # XLEN remains positive (XACK doesn't decrement it); XPENDING is zero
+    # — exactly the production shape after a fully-drained consumer cycle.
+    # Skip explicit XPENDING shape assertion (varies across redis-py
+    # versions); the test's real property is that upgrade_schema
+    # SUCCEEDS despite XLEN > 0.
+    assert int(redis_client.xlen(stream)) >= 1
+
+    try:
+        # CR.A.13: this should NOT raise. The upgrade proceeds despite XLEN > 0.
+        result = upgrade_schema(
+            _IntE2EEvo,
+            _IntE2EEvoV2Add,
+            registry,
+            redis_client=redis_client,
+            wait_for_consumer=False,
+        )
+        assert result.entity_count == 2
+    finally:
+        with contextlib.suppress(redis.ResponseError):
+            redis_client.xgroup_destroy(stream, group)
+        redis_client.delete(stream)
         _drop_current(redis_client)
 
 

@@ -67,6 +67,19 @@ _INT32_MAX = 2**31 - 1
 _UINT8_MIN = 0
 _UINT8_MAX = 255
 
+# CR.A.1 (v0.1.1): float32 representable range. Recorded for documentation
+# only. We do NOT apply this as a pydantic ``lt``/``gt`` constraint because
+# pydantic's range checks reject NaN even under ``allow_inf_nan=True``
+# (NaN comparisons are False, so ``nan < X`` fails ``lt=X``). NaN
+# acceptance is load-bearing for ML missing-feature semantics (ADR-008 §5
+# / CLAUDE.md §8). The defense-in-depth here is on the CONSUMER side:
+# ``quorin.wal_consumer._apply`` widens its poison-pill catch to
+# ``(ValueError, OverflowError, struct.error)`` so non-pydantic producers
+# (or pydantic-validated values that still overflow ``struct.pack_into('<f')``
+# downstream) still surface as poison-pill, not silent PEL bloat.
+_FLOAT32_MAX = 3.4028234663852886e38
+_FLOAT32_MIN = -_FLOAT32_MAX
+
 
 # ---------------------------------------------------------------------------
 # Public API.
@@ -167,6 +180,10 @@ def _field_for(f: FeatureField) -> tuple[Any, Any]:
     if is_float:
         scalar_type: Any = float
         scalar_kwargs: dict[str, Any] = {"allow_inf_nan": True}
+        # NOTE (CR.A.1 / v0.1.1): no float32 range constraint here. See
+        # the _FLOAT32_MAX comment above — pydantic's lt/gt rejects NaN,
+        # which conflicts with our NaN-acceptance contract. The
+        # consumer's widened poison-pill catch is the defense.
     else:
         scalar_type = int
         scalar_kwargs = _int_constraints(f.dtype)
