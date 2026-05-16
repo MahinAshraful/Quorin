@@ -38,6 +38,7 @@ from quorin.shm import (  # noqa: E402
     Segment,
     SegmentNotFoundError,
     SegmentRegistry,
+    _check_dev_shm_capacity,
     _key_current,
     _key_pid_segments,
     _key_refcount,
@@ -75,6 +76,69 @@ def _get_int(redis_client, key: str) -> int:
 # ---------------------------------------------------------------------------
 # create
 # ---------------------------------------------------------------------------
+
+
+class TestDevShmCapacityGuard:
+    """CR.D.5 (v0.1.1): /dev/shm 50% capacity guard. Tested at the helper
+    level (no Redis needed) since the guard is a pure function of
+    ``os.statvfs`` output and the requested allocation size.
+    """
+
+    def test_refuses_when_request_exceeds_50pct_of_free(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cap is 50% of free. Patch os.statvfs to report 1 GB free —
+        a 600 MB request must be refused; a 400 MB request must succeed.
+        """
+        import errno
+        import os
+
+        class _FakeStatvfs:
+            f_bavail = 1024  # 1024 blocks
+            f_frsize = 1024 * 1024  # 1 MB per block → 1 GB total free
+
+        monkeypatch.setattr(os, "statvfs", lambda _path: _FakeStatvfs())
+
+        # 600 MB > 50% of 1 GB → ENOSPC
+        with pytest.raises(OSError) as exc:
+            _check_dev_shm_capacity(600 * 1024 * 1024)
+        assert exc.value.errno == errno.ENOSPC
+
+        # 400 MB < 50% of 1 GB → succeeds (no exception)
+        _check_dev_shm_capacity(400 * 1024 * 1024)
+
+    def test_filenotfounderror_emits_warning_does_not_raise(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On systems without /dev/shm (rare; non-Linux POSIX, locked-
+        down sandbox), ``os.statvfs`` raises ``FileNotFoundError``. We
+        emit a UserWarning and return — the next ``posix_shm.create``
+        will fail with its own clearer error per invariant #9.
+        """
+        import os
+
+        def _raise_fnf(_path: str) -> object:
+            raise FileNotFoundError("/dev/shm")
+
+        monkeypatch.setattr(os, "statvfs", _raise_fnf)
+
+        with pytest.warns(UserWarning, match="/dev/shm not found"):
+            # Must not raise — UserWarning is the only signal.
+            _check_dev_shm_capacity(1024)
+
+    def test_at_exact_50pct_boundary_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """50% exactly is at the boundary; the guard uses ``>``, not
+        ``>=``, so the boundary value is accepted.
+        """
+        import os
+
+        class _FakeStatvfs:
+            f_bavail = 1000
+            f_frsize = 1000  # 1 MB free
+
+        monkeypatch.setattr(os, "statvfs", lambda _path: _FakeStatvfs())
+        # cap = 500_000; request 500_000 (exact 50%) → no raise.
+        _check_dev_shm_capacity(500_000)
 
 
 def test_create_writes_correct_header(redis_client) -> None:

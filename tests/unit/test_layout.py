@@ -145,6 +145,35 @@ class TestComputeLayout:
         with pytest.raises(ValueError, match="max_id_bytes"):
             compute_layout(_TwoFieldSchema, capacity=10, max_id_bytes=0)
 
+    def test_max_id_bytes_above_ceiling_rejected(self) -> None:
+        """CR.H.4 (v0.1.1): defense against corrupt segment headers.
+
+        ``compute_layout_from_segment`` reads ``max_id_bytes`` from
+        segment bytes; a corrupt value of e.g. 4 GB would multiply by
+        capacity and trigger huge-allocation attempts at
+        ``initialize_segment_regions``. Reject anything above the
+        documented ceiling.
+        """
+        from quorin.layout import MAX_ID_BYTES_CEILING
+
+        with pytest.raises(ValueError, match=r"max_id_bytes .* exceeds ceiling"):
+            compute_layout(
+                _TwoFieldSchema,
+                capacity=10,
+                max_id_bytes=MAX_ID_BYTES_CEILING + 1,
+            )
+
+    def test_max_id_bytes_at_ceiling_accepted(self) -> None:
+        """CR.H.4: the ceiling itself is inclusive — boundary regression."""
+        from quorin.layout import MAX_ID_BYTES_CEILING
+
+        layout = compute_layout(
+            _TwoFieldSchema,
+            capacity=10,
+            max_id_bytes=MAX_ID_BYTES_CEILING,
+        )
+        assert layout.max_id_bytes == MAX_ID_BYTES_CEILING
+
     def test_capacity_overflow_rejected(self) -> None:
         with pytest.raises(ValueError, match="uint32"):
             compute_layout(_TwoFieldSchema, capacity=2**32)

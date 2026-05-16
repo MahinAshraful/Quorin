@@ -130,6 +130,14 @@ TOMBSTONE: Final[int] = 2  # reserved; never written in v1
 #: reach ~56 bytes. 64 bytes covers all common cases with room.
 DEFAULT_MAX_ID_BYTES: Final[int] = 64
 
+#: Hard ceiling on ``max_id_bytes`` (CR.H.4 / v0.1.1). Defends against
+#: corrupt / hostile segments declaring absurd values that would cause
+#: ``string_pool_data_bytes = capacity * (4 + max_id_bytes)`` to either
+#: overflow or attempt huge allocations on open. 64 KiB is generous —
+#: well above any realistic compound-key length, well below any value
+#: that would matter for memory pressure.
+MAX_ID_BYTES_CEILING: Final[int] = 64 * 1024
+
 #: Where the writer-cursors metadata region begins (just after the 16-byte
 #: primary header from Step 2).
 METADATA_OFFSET: Final[int] = 16
@@ -248,6 +256,16 @@ def compute_layout(
         raise ValueError(f"capacity must be >= 1, got {capacity}")
     if max_id_bytes <= 0:
         raise ValueError(f"max_id_bytes must be >= 1, got {max_id_bytes}")
+    if max_id_bytes > MAX_ID_BYTES_CEILING:
+        # CR.H.4 (v0.1.1): defend against corrupt / hostile segments
+        # declaring absurd values. The ``compute_layout_from_segment``
+        # path reads max_id_bytes from segment bytes; a 4 GB value
+        # would otherwise multiply by capacity and trigger a huge
+        # allocation attempt at the next ``initialize_segment_regions``.
+        raise ValueError(
+            f"max_id_bytes {max_id_bytes} exceeds ceiling {MAX_ID_BYTES_CEILING} "
+            "(CR.H.4 / ADR-018). Likely corrupt segment header."
+        )
     if capacity > 0xFFFF_FFFF:
         # capacity is stored as uint32 in the header.
         raise ValueError(f"capacity {capacity} exceeds uint32 range")
@@ -608,11 +626,18 @@ def initialize_segment_regions(buf: memoryview, layout: SegmentLayout) -> None:
 # ---------------------------------------------------------------------------
 
 
-def pack_row(schema: type[FeatureSchema], **fields: Any) -> bytes:
+def pack_row(schema: type[FeatureSchema], /, **fields: Any) -> bytes:
     """Pack one row of feature values into the byte layout :func:`insert` expects.
 
     Args:
-        schema: A :class:`~quorin.schema.FeatureSchema` subclass.
+        schema: A :class:`~quorin.schema.FeatureSchema` subclass. **Positional-only**
+            (note the ``/`` in the signature) so a user schema can have a
+            field literally named ``"schema"`` without colliding with the
+            parameter name. ``pack_row(MySchema, schema=1.5, foo=2.0)`` is
+            unambiguous — the first positional is the schema class and
+            ``schema=1.5`` is the field-value kwarg. Fix for the
+            Hypothesis-discovered collision; locked by
+            ``tests/property/test_pack_row_roundtrip.py``.
         **fields: One keyword argument per declared field. Scalar values are
             accepted for ``shape=()`` fields; sequences (lists, tuples,
             ndarrays) for shaped fields. All values are coerced to the field's

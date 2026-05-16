@@ -221,11 +221,57 @@ def test_can_upgrade_shape_change_for_new_field_ok() -> None:
         [FeatureField("a", DType.FLOAT32)],
         [
             FeatureField("a", DType.FLOAT32),
-            FeatureField("emb", DType.FLOAT32, shape=(8,)),  # new field, any shape
+            FeatureField("emb", DType.FLOAT32, shape=(8,)),  # new field, any 1D shape
         ],
     )
     ok, _ = can_upgrade(old, new)
     assert ok
+
+
+def test_can_upgrade_rejects_2d_shape_in_existing_field() -> None:
+    """CR.A.4 (v0.1.1): _build_translation_table doesn't yet handle 2D
+    shapes. Reject upfront with clear reason rather than letting the
+    AttributeError surface from .flatten().flatten() mid-upgrade.
+    """
+    old, new = _build_pair(
+        [FeatureField("mat", DType.FLOAT64, shape=(2, 3))],
+        [FeatureField("mat", DType.FLOAT64, shape=(2, 3))],
+    )
+    ok, reasons = can_upgrade(old, new)
+    assert not ok
+    assert any("2D-shape upgrade not yet supported" in r for r in reasons)
+
+
+def test_can_upgrade_rejects_new_2d_field() -> None:
+    """CR.A.4 (v0.1.1): a NEW field (not in OLD) with 2D shape also
+    breaks insert_kernel's rank-2 path. Reject these too — the pure
+    "shape changed" check above doesn't cover this case.
+    """
+    old, new = _build_pair(
+        [FeatureField("scalar", DType.FLOAT32)],
+        [
+            FeatureField("scalar", DType.FLOAT32),
+            FeatureField("new_mat", DType.FLOAT64, shape=(2, 3)),  # NEW + 2D
+        ],
+    )
+    ok, reasons = can_upgrade(old, new)
+    assert not ok
+    assert any("new 2D-shape field not yet supported" in r for r in reasons)
+
+
+def test_can_upgrade_rejects_1d_to_2d_shape_change_in_existing_field() -> None:
+    """CR.A.4 (v0.1.1): widening a 1D field to 2D in the same name
+    triggers BOTH the "shape changed" rejection and the 2D rejection.
+    Either is sufficient.
+    """
+    old, new = _build_pair(
+        [FeatureField("emb", DType.FLOAT32, shape=(8,))],
+        [FeatureField("emb", DType.FLOAT32, shape=(2, 4))],  # different shape AND 2D
+    )
+    ok, reasons = can_upgrade(old, new)
+    assert not ok
+    # At least one of the two rejection paths fired.
+    assert any("shape changed" in r or "2D-shape" in r for r in reasons)
 
 
 def test_can_upgrade_version_not_strictly_increasing_rejected() -> None:
@@ -321,6 +367,67 @@ def test_upgrade_schema_rejects_when_can_upgrade_fails() -> None:
             new,
             registry=Mock(),  # type: ignore[arg-type]
             redis_client=Mock(),
+        )
+
+
+def test_upgrade_schema_rejects_capacity_factor_zero() -> None:
+    """CR.H.5 (v0.1.1): capacity_factor=0 (or negative or NaN) would
+    silently saturate to occupied_count+1 via the post-occupied-read
+    ``max(...)`` call. Reject upfront with a clear ValueError.
+    """
+    from quorin.evolution import upgrade_schema
+
+    old, new = _build_pair(
+        [FeatureField("a", DType.FLOAT32)],
+        [FeatureField("a", DType.FLOAT32)],
+    )
+    with pytest.raises(ValueError, match="capacity_factor must be a finite float > 0"):
+        upgrade_schema(
+            old,
+            new,
+            registry=Mock(),  # type: ignore[arg-type]
+            redis_client=Mock(),
+            capacity_factor=0.0,
+        )
+
+
+def test_upgrade_schema_rejects_capacity_factor_negative() -> None:
+    """CR.H.5 (v0.1.1): negative factor."""
+    from quorin.evolution import upgrade_schema
+
+    old, new = _build_pair(
+        [FeatureField("a", DType.FLOAT32)],
+        [FeatureField("a", DType.FLOAT32)],
+    )
+    with pytest.raises(ValueError, match="capacity_factor must be a finite float > 0"):
+        upgrade_schema(
+            old,
+            new,
+            registry=Mock(),  # type: ignore[arg-type]
+            redis_client=Mock(),
+            capacity_factor=-1.0,
+        )
+
+
+def test_upgrade_schema_rejects_capacity_factor_nan() -> None:
+    """CR.H.5 (v0.1.1): NaN factor — multiplied by occupied_count it'd
+    silently fall through to the occupied-count+1 floor.
+    """
+    import math
+
+    from quorin.evolution import upgrade_schema
+
+    old, new = _build_pair(
+        [FeatureField("a", DType.FLOAT32)],
+        [FeatureField("a", DType.FLOAT32)],
+    )
+    with pytest.raises(ValueError, match="capacity_factor must be a finite float > 0"):
+        upgrade_schema(
+            old,
+            new,
+            registry=Mock(),  # type: ignore[arg-type]
+            redis_client=Mock(),
+            capacity_factor=math.nan,
         )
 
 

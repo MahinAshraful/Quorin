@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any, cast
 import msgpack  # type: ignore[import-untyped]
 
 from quorin._internal.pydantic_factory import field_order_for, pydantic_model_for
+from quorin._internal.redis_compat import warn_if_no_socket_timeout
 from quorin.metrics import (
     wal_write_latency_seconds,
     wal_write_sync_consumer_lag_seconds,
@@ -162,6 +163,10 @@ class WALProducer:
         stream_key: bytes = DEFAULT_STREAM_KEY,
         maxlen: int = DEFAULT_MAXLEN,
     ) -> None:
+        # CR.E.6 (v0.1.1): warn at construction if socket_timeout absent.
+        # write_sync's poll loop can block on Redis without a finite
+        # timeout — the producer thread becomes unjoinable on partition.
+        warn_if_no_socket_timeout(redis_client, source="WALProducer")
         self._redis = redis_client
         self._stream_key = stream_key
         self._maxlen = maxlen

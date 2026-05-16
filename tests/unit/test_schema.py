@@ -189,6 +189,74 @@ def test_non_feature_field_in_fields_rejected() -> None:
             fields = ["not a field"]  # type: ignore[list-item]
 
 
+def test_schema_name_with_hyphen_rejected() -> None:
+    """CR.A.6 (v0.1.1): non-identifier names collide via _safe_class_name
+    sanitization (e.g. ``MySchema-v1`` and ``MySchema_v1`` both become
+    ``MySchema_v1`` in Redis keys / paths). Reject at class-definition.
+    """
+    with pytest.raises(ValueError, match=r"name.*invalid"):
+        # A class name with a hyphen — needs to be created dynamically
+        # because Python won't let you write ``class My-Schema``.
+        type(
+            "My-Schema",
+            (FeatureSchema,),
+            {
+                "version": 1,
+                "fields": [FeatureField("x", dtype.float32)],
+            },
+        )
+
+
+def test_schema_name_with_dot_rejected() -> None:
+    with pytest.raises(ValueError, match=r"name.*invalid"):
+        type(
+            "My.Schema",
+            (FeatureSchema,),
+            {
+                "version": 1,
+                "fields": [FeatureField("x", dtype.float32)],
+            },
+        )
+
+
+def test_schema_name_starting_with_digit_rejected() -> None:
+    with pytest.raises(ValueError, match=r"name.*invalid"):
+        type(
+            "1Schema",
+            (FeatureSchema,),
+            {
+                "version": 1,
+                "fields": [FeatureField("x", dtype.float32)],
+            },
+        )
+
+
+def test_schema_name_too_long_rejected() -> None:
+    long_name = "A" + "B" * 63  # 64 chars total — over the 63 ceiling.
+    with pytest.raises(ValueError, match=r"name.*invalid"):
+        type(
+            long_name,
+            (FeatureSchema,),
+            {
+                "version": 1,
+                "fields": [FeatureField("x", dtype.float32)],
+            },
+        )
+
+
+def test_schema_name_with_underscore_accepted() -> None:
+    # Underscores and digits-after-leading-letter are permitted.
+    cls = type(
+        "My_Schema_v1",
+        (FeatureSchema,),
+        {
+            "version": 1,
+            "fields": [FeatureField("x", dtype.float32)],
+        },
+    )
+    assert cls.__name__ == "My_Schema_v1"
+
+
 def test_fields_as_tuple_rejected() -> None:
     # We require a list, not a tuple — simpler mental model.
     with pytest.raises(TypeError, match="list"):

@@ -12,6 +12,7 @@ numba, redis, pyarrow, or pydantic imports live here.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, ClassVar, Final
@@ -30,6 +31,23 @@ CACHE_LINE_SIZE: Final[int] = 64
 
 PAGE_SIZE: Final[int] = 4096
 """OS page size. Total segment size is rounded up to this."""
+
+# CR.A.6 (v0.1.1): schema names go into Redis keys, /dev/shm paths, and
+# Parquet partition paths. Anything outside this regex either collides
+# via ``_safe_class_name`` sanitization or breaks pathing.
+#
+# Pattern: ``[A-Za-z_]`` leading + ``[A-Za-z0-9_]`` follow-on, max 63
+# chars. Leading underscore is permitted because:
+#   1. ``_safe_class_name`` only rewrites non-alphanumeric-underscore
+#      characters; underscore is already pass-through, so ``_FooSchema``
+#      and ``FooSchema`` already do not collide.
+#   2. The ecosystem convention is leading-underscore for "private/test"
+#      classes (``_TestSchema``, ``_FixtureSchema``); rejecting these
+#      would force every consumer of the library to rename their
+#      private test schemas.
+# Total length stays well under POSIX NAME_MAX=255 even after the
+# ``quorin_{name}_v{n}_{uuid8}`` prefix overhead in ``_segment_name``.
+_SCHEMA_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +175,21 @@ class FeatureSchema:
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
+
+        # CR.A.6 (v0.1.1): reject schema names that would either collide
+        # under ``_safe_class_name`` sanitization (silent multi-tenant
+        # corruption) or break Parquet/POSIX pathing. Failing loudly at
+        # class-definition is better than silent state interference at
+        # runtime. CR.C.1 adds a defense-in-depth re-check at the
+        # Parquet write boundary for runtime ``cls.__name__`` mutation.
+        if not _SCHEMA_NAME_PATTERN.match(cls.__name__):
+            raise ValueError(
+                f"FeatureSchema subclass name {cls.__name__!r} is invalid: "
+                "must match ^[A-Za-z_][A-Za-z0-9_]{0,62}$. Schema names are "
+                "used as identifiers in Redis keys, /dev/shm paths, and "
+                "Parquet partitions; non-conforming names risk collisions "
+                "across tenants. (CR.A.6 / ADR-018)"
+            )
 
         if "version" not in cls.__dict__:
             raise TypeError(f"{cls.__name__} must define a class attribute `version: int`")

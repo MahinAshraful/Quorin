@@ -28,8 +28,18 @@ def redis_client() -> Iterator[redis.Redis]:
     """Live Redis client. Tests that need it are gated on it — if Redis is not
     running (CI without the Redis service, or a local run without
     ``./dev-up.sh``), dependent tests skip rather than error.
+
+    ``socket_timeout=5.0`` is set explicitly to silence CR.E.6's
+    UserWarning AND to demonstrate the production-correct pattern
+    (every test fixture should mirror what a production deployment
+    would construct).
     """
-    client = redis.Redis.from_url(_redis_url(), decode_responses=False)
+    client = redis.Redis.from_url(
+        _redis_url(),
+        decode_responses=False,
+        socket_timeout=5.0,
+        socket_connect_timeout=5.0,
+    )
     try:
         client.ping()
     except redis.ConnectionError:
