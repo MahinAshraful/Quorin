@@ -31,6 +31,12 @@ ignore = [
 #          lazy schema imports after skipif gate).
 "tests/**" = ["PLR2004", "S101", "PLR0915", "PLC2701", "RUF012", "PLC0415"]
 "benchmarks/**" = ["PLR2004", "PLC2701", "RUF012", "PLC0415", "PLR0915"]
+# examples/ is the documented public-facing runnable code (CR.A.12-b /
+# v0.1.1). FeatureSchema subclasses there are illustrative; same RUF012
+# rationale as tests. Inline imports (PLC0415) keep example code
+# narrative-readable. PLR2004 / T201 (print) are intentional in
+# examples — they're meant to demonstrate values, not be production.
+"examples/**" = ["RUF012", "PLC0415", "PLR2004", "T201", "S101"]
 
 [lint.isort]
 # `_helpers` lives in tests/_helpers.py and is importable thanks to

@@ -6,18 +6,21 @@ Decomposed so a regression in any sub-component shows up in isolation:
 - ``bench_consumer_apply_per_msg`` — one message through the consumer's
   full apply path (msgpack-decode + row_pack + layout.insert + offline
   no-op + side-table SET pipeline build).
-- ``bench_consumer_throughput_*`` — real-Redis end-to-end throughput.
-- ``bench_consumer_lag_e2e_*`` — real-Redis producer-XADD →
-  side-table-set lag.
 
-The row_pack benches do not need Redis. The throughput / lag benches
-require Redis and skip cleanly otherwise.
+The row_pack benches do not need Redis. consumer_apply_per_msg requires
+Redis and skips cleanly otherwise.
 
-Spec / ADR-009 §13 gates:
+Active gates (ADR-009 §13 + benchmarks/regression/thresholds.yml):
   - ``row_pack_200_field`` ≤ 30 µs p99 (consolidated-Struct path).
   - ``consumer_apply_per_msg_200_field`` ≤ 100 µs p99.
-  - ``consumer_throughput_50_field`` ≥ 10 k msgs/sec sustained.
-  - ``consumer_lag_e2e_p99`` < 100 ms steady-state.
+
+CR.D.14 (v0.1.1): the original ADR-009 §13 also listed
+``consumer_throughput_50_field`` ≥ 10 k msgs/sec and
+``consumer_lag_e2e_p99`` < 100 ms gates, but the corresponding
+benchmarks were never implemented. v0.1.1 retires those gate claims
+(the same theme as CR.A.9/A.10's dead-metric removal: don't ship
+gates we don't enforce). Implementing real end-to-end throughput +
+lag benches is on the v0.2.0 / v0.3.0 perf roadmap.
 """
 
 from __future__ import annotations

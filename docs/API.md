@@ -136,10 +136,10 @@ for read-your-own-writes.
 
 | Symbol | Purpose |
 |---|---|
-| `WALProducer(redis_client, *, schema_name=None)` | Validates rows via pydantic, msgpack-encodes, XADDs to `quorin:wal`. Reusable msgpack `Packer`; memoized pydantic model class; pre-warmed Prometheus labels. |
-| `WALProducer.write(...)` | Async fire-and-forget. ~10k writes/sec target. |
-| `WALProducer.write_sync(..., timeout=0.1)` | XADD then poll the consumer's processed-sidetable. Pays one consumer-cycle round trip (5-50 ms typical). |
-| `WriteSyncTimeout` | Raised by `write_sync` when the consumer doesn't ack within `timeout`. |
+| `WALProducer(redis_client, *, stream_key=DEFAULT_STREAM_KEY, maxlen=DEFAULT_MAXLEN)` | Validates rows via pydantic, msgpack-encodes, XADDs to `quorin:wal`. Reusable msgpack `Packer`; memoized pydantic model class; pre-warmed Prometheus labels. CR.E.6 (v0.1.1): emits a `UserWarning` if `redis_client` lacks `socket_timeout`. |
+| `WALProducer.write(schema, entity_id, values: dict, event_time_ns=None) -> bytes` | Async fire-and-forget; returns the Redis-assigned message ID. ~10k writes/sec target. |
+| `WALProducer.write_sync(schema, entity_id, values: dict, event_time_ns=None, timeout_ms=100) -> bytes` | XADD then poll the consumer's processed-sidetable. Pays one consumer-cycle round trip (5-50 ms typical). |
+| `WriteSyncTimeoutError` | Raised by `write_sync` when the consumer doesn't ack within `timeout_ms`. |
 
 See [ADR-008](adr/008-wal-producer-design.md).
 
@@ -153,10 +153,12 @@ WAL consumer — the single writer to the segment.
 
 | Symbol | Purpose |
 |---|---|
-| `WALConsumer(redis, registry, *, offline_writer=None, ...)` | Async coroutine: read from `quorin:wal` group, validate, `layout.insert` to segment, append to offline writer, defer XACK until offline flush returns. |
+| `WALConsumer(redis_client, segments: Mapping[str, Segment], offline=None, *, registry, stream_key=, group_name=, consumer_name=, batch_count=, block_ms=, flush_interval_seconds=, max_pending_ack=)` | Async coroutine: read from `quorin:wal` group, validate, `layout.insert` to segment, append to offline writer, defer XACK until offline flush returns. `segments` keyed by `schema.__name__`; `registry` is required (Step 15 safety net). CR.E.6 (v0.1.1): emits `UserWarning` if `redis_client` lacks `socket_timeout`. |
 | `WALConsumer.run()` | Run forever (cancellation closes cleanly). |
-| `OfflineWriter` (Protocol) | Implementations must provide `append(rows)` + `flush()`. |
+| `WALConsumer.stop()` | Signals the run loop to exit at the next iteration boundary. |
+| `OfflineWriter` (Protocol) | Implementations must provide `append(schema, entity_id, event_time_ns, values_list, msg_id)` + `flush()`. |
 | `NoopOfflineWriter` | No-op implementation for tests / configurations without an offline store. |
+| `ConsumerNameInUseError` | Raised on `XGROUP CREATECONSUMER` if another consumer is already registered with the same `consumer_name`. |
 
 See [ADR-009](adr/009-wal-consumer-design.md).
 
@@ -170,10 +172,13 @@ Append-only Parquet store + point-in-time reads + hydration helpers.
 
 | Symbol | Purpose |
 |---|---|
-| `ParquetDatasetStore(root_dir, schema, *, flush_interval_seconds=5, max_rows_in_memory=10_000, include_msg_id=True, ...)` | Async writer. `await append(rows)` buffers; `await flush()` writes one Parquet file per call. |
-| `ParquetDatasetStore.read_point_in_time(queries)` | Synchronous (CPU + IO). Returns features as-of each query timestamp via `searchsorted` asof-join. |
-| `ParquetDatasetStore.latest_features(entity_ids)` | Optimized "as-of now" path used by hydration. |
-| `ParquetDatasetStore.distinct_entity_ids()` | Returns the unique entity IDs in the dataset. |
+| `ParquetDatasetStore(base, *, include_msg_id=True, compression="zstd", compression_level=3)` | Async writer. `base` is the root path (`pathlib.Path` or str). CR.C.1 (v0.1.1): defense-in-depth re-validates `schema.__name__` at write boundaries. |
+| `await store.append(schema, entity_id, event_time_ns, values_list: list, msg_id: bytes)` | Buffer one row into the per-`(schema, date)` bucket. |
+| `await store.flush()` | Materialize each bucket as one Parquet file under `base/schema={name}/event_date={YYYY-MM-DD}/{uuid}.parquet`. CR.A.2 (v0.1.1): on partial failure, unwritten buckets are restored to `_buffers` so the next flush retries them. |
+| `await store.close()` | Final flush + cleanup. |
+| `store.read_point_in_time(schema, query_table: pa.Table, *, lookback_days=30)` | Synchronous (CPU + IO). `query_table` columns: `entity_id` (string), `as_of_time_ns` (int64). Returns features as-of each query timestamp via `searchsorted` asof-join. |
+| `store.latest_features(schema, entity_ids: list[str], lookback_days=30)` | Optimized "as-of now" path used by hydration. |
+| `store.distinct_entity_ids(schema, lookback_days=30)` | Returns the unique entity IDs in the dataset within the lookback window. |
 
 See [ADR-010](adr/010-parquet-offline-store.md),
 [ADR-011](adr/011-point-in-time-reads.md).
@@ -188,9 +193,9 @@ Rebuild a segment from the Parquet offline store on cold start.
 
 | Symbol | Purpose |
 |---|---|
-| `hydrate(redis, schema, store, *, capacity, max_id_bytes=64) -> HydrationResult` | Synchronous (5-10 s for 1M rows on WSL2). Async callers wrap in `asyncio.to_thread`. |
-| `HydrationResult` | Dataclass with the populated segment + row count + duration. |
-| `HydrationError` (+ `HydrationConflictError`, `EmptyDatasetError`) | Failure modes. |
+| `hydrate(schema, store, registry, *, redis_client, capacity_factor=4.0, as_of_time_ns=None, lookback_days=30) -> HydrationResult` | Synchronous (~9.9 s for 1M × 50 fields on WSL2; 1.2-2.5 s projected on bare metal). Async callers wrap in `asyncio.to_thread`. |
+| `HydrationResult` | Dataclass: `segment_name: str`, `entity_count: int`, `elapsed_seconds: float`. |
+| `HydrationError` (base) → `HydrationConflictError`, `EmptyDatasetError` | Failure modes. |
 
 Preconditions: no `schema:current` set, no live WAL consumer. Operator-
 serialized; not enforced via mutex (per [ADR-012](adr/012-hydration.md)).
@@ -205,8 +210,10 @@ Atomic schema-version flip with operator-verified semantics.
 
 | Symbol | Purpose |
 |---|---|
-| `upgrade_schema(redis, *, old, new, ...) -> UpgradeResult` | Synchronous orchestrator: build new segment, vectorized translation, atomic CAS flip on `quorin:schema:{name}:current`, wait for consumer attach. |
-| `can_upgrade(old, new)` | Pure predicate — checks add-only / dtype-widening rules without touching Redis or shm. |
+| `upgrade_schema(old_schema, new_schema, registry, *, redis_client, capacity_factor=1.0, dry_run=False, wait_for_consumer=True, wait_seconds=60.0) -> UpgradeResult` | Synchronous orchestrator: build new segment, vectorized translation, atomic CAS flip on `quorin:schema:{name}:current`, wait for consumer attach. CR.A.7 (v0.1.1): post-flip exception path now logs but does NOT orphan-clean the live new segment. CR.A.13 (v0.1.1): WAL-drained precondition is now `XPENDING == 0` (was `XLEN == 0`, which became impossible after any traffic). |
+| `can_upgrade(old, new) -> tuple[bool, list[str]]` | Pure predicate — returns `(ok, reasons)`. `reasons` is empty when `ok` is True; non-empty list of human-readable failure descriptions otherwise. CR.A.4 (v0.1.1): rejects 2D-shape upgrades (deferred to v0.2.0). |
+| `UpgradeResult` | Dataclass: `old_segment_name: str \| None`, `new_segment_name: str \| None`, `entity_count: int`, `row_size_bytes_old: int`, `row_size_bytes_new: int`, `elapsed_seconds: float`, `consumer_pause_seconds: float`, `consumer_attach_seconds: float`. |
+| `UpgradeError` (base) → `UpgradeConflictError`, `UpgradeIncompatibleError`, `UpgradeAbortedError` | Failure modes. |
 | `UpgradeResult` | Dataclass with old/new segment names, row count, duration. |
 | `UpgradeError` (+ `UpgradeConflictError`, `UpgradeIncompatibleError`, `UpgradeAbortedError`) | Failure modes. |
 | `main(argv)` | CLI entry: `python -m quorin.evolution upgrade --redis URL --old PKG:V1 --new PKG:V2 --confirm`. |
@@ -246,7 +253,7 @@ load; values increment in memory whether or not you start the HTTP server.
 |---|---|
 | `start_metrics_server(port=9100)` | Starts a `prometheus_client` HTTP server on the given port. Optional. |
 | `registry` | The `CollectorRegistry` instance — pass to a custom HTTP wrapper if you don't want the built-in server. |
-| `read_latency_seconds`, `gc_pause_seconds`, `wal_lag_seconds`, `pool_miss_total`, ... | The instruments themselves. Names are stable; relabel collisions are checked at module load. |
+| `gc_pause_seconds`, `pool_miss_total`, `wal_write_latency_seconds`, `wal_consumer_apply_total`, `offline_flush_seconds`, ... | The instruments themselves. Names are stable; relabel collisions are checked at module load. v0.1.0's `read_latency_seconds` and `wal_lag_seconds` were removed in v0.1.1 (declared but never observed; see CR.A.9/A.10 / ADR-018). |
 
 All metric names use the `quorin_*` prefix.
 
@@ -260,7 +267,7 @@ structlog JSON configuration.
 
 | Symbol | Purpose |
 |---|---|
-| `configure(level="INFO", json=True)` | Idempotent. First-call sets the structlog renderer chain. |
+| `configure(level="INFO")` | Idempotent. First-call sets the structlog renderer chain to the project's JSON-on-stderr default. |
 | `get_logger(name=None)` | Returns a `BoundLogger`. Auto-calls `configure` on first use. |
 | `bind(**kwargs)` | Bind context vars onto the contextvar-backed root logger. Useful for `bind(component="quorin.serving")` at startup. |
 
@@ -273,7 +280,7 @@ structlog JSON configuration.
 | `quorin.shm` | `SchemaCRCMismatchError`, `SegmentNotFoundError` |
 | `quorin.layout` | `CapacityExceededError`, `StringPoolExhaustedError` |
 | `quorin.serving` / `quorin.assembly` | `EntityNotFoundError` (per the `assemble` semantics — typically not raised; `assemble_batch` returns a `found_mask` instead) |
-| `quorin.wal` | `WriteSyncTimeout` |
+| `quorin.wal` | `WriteSyncTimeoutError` |
 | `quorin.hydration` | `HydrationError`, `HydrationConflictError`, `EmptyDatasetError` |
 | `quorin.evolution` | `UpgradeError`, `UpgradeConflictError`, `UpgradeIncompatibleError`, `UpgradeAbortedError` |
 
@@ -281,7 +288,7 @@ structlog JSON configuration.
 
 ## Where to look next
 
-- **Why does X exist / why this design?** → [`docs/adr/`](adr/) — 17 ADRs, one
+- **Why does X exist / why this design?** → [`docs/adr/`](adr/) — 17 ADRs (numbered 001-015 + 017-018; ADR-016 was retired during Step 16 authoring), one
   per load-bearing decision.
 - **What does the wire look like?** → ADR-008 (WAL message format), ADR-009
   (consumer apply loop), ADR-014 §"Critical decisions" #6 (poison-pill format

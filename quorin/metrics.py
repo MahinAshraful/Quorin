@@ -1,9 +1,24 @@
 """Prometheus metric registry.
 
 Histograms and gauges are registered at import time so every later step can
-``from quorin.metrics import read_latency_seconds`` and ``.observe()`` without
+``from quorin.metrics import gc_pause_seconds`` and ``.observe()`` without
 worrying about registration order. If no HTTP server is started, counters
 still increment in memory and are visible via :func:`collect` (used in tests).
+
+CR.A.9 / CR.A.10 (v0.1.1): two metrics declared at v0.1.0 that no
+production code ever observes were removed:
+
+* ``quorin_read_latency_seconds`` — would have measured per-call hot-path
+  read latency. Wiring ``.observe()`` on every assemble call costs
+  ~30 ns on the 4.48 µs p99 budget (~0.7%); v0.1.1 cannot honestly
+  carry an unobserved metric AND keep the bench claim. Deferred to
+  v0.2.0 as opt-in instrumentation behind an env var.
+* ``quorin_wal_lag_seconds`` — would have been a gauge sampled by the
+  consumer; the consumer ships ``quorin_wal_write_sync_consumer_lag_seconds``
+  (a histogram) instead, and never sampled the gauge.
+
+Operators tracking these in v0.1.0 dashboards saw zeros. v0.2.0 will
+ship proper opt-in observability. See ADR-018.
 """
 
 from __future__ import annotations
@@ -20,45 +35,12 @@ from prometheus_client import (
 # default registry. ``start_metrics_server`` exposes this one explicitly.
 registry = CollectorRegistry()
 
-# Read-path latency, labelled by the path taken (shm vs redis) and by schema.
-# Buckets target the 5 us - 1 ms range; anything slower than 1 ms is a bug.
-_LATENCY_BUCKETS = (
-    1e-6,
-    2e-6,
-    5e-6,
-    1e-5,
-    2e-5,
-    5e-5,
-    1e-4,
-    2e-4,
-    5e-4,
-    1e-3,
-    2e-3,
-    5e-3,
-    1e-2,
-)
-
-read_latency_seconds = Histogram(
-    "quorin_read_latency_seconds",
-    "Per-call read latency on the serving hot path.",
-    labelnames=("schema", "path"),
-    buckets=_LATENCY_BUCKETS,
-    registry=registry,
-)
-
 # GC pause distribution. Populated by quorin._internal.gc_manager (Step 7).
 gc_pause_seconds = Histogram(
     "quorin_gc_pause_seconds",
     "Duration of each Python GC pause observed on the serving process.",
     labelnames=("generation",),
     buckets=(1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1),
-    registry=registry,
-)
-
-# Lag between WAL XADD and the consumer's processed-sidetable write. (Step 10.)
-wal_lag_seconds = Gauge(
-    "quorin_wal_lag_seconds",
-    "Seconds between WAL producer XADD and consumer acknowledgement.",
     registry=registry,
 )
 
@@ -106,8 +88,10 @@ wal_write_total = Counter(
 )
 
 # Lag observed by write_sync between XADD and the consumer's processed-key
-# write. Distinct from quorin_wal_lag_seconds (a gauge sampled by the
-# consumer); this one measures the producer-observed round-trip.
+# write. The producer-observed round-trip (the consumer's own lag
+# instrumentation, originally planned as quorin_wal_lag_seconds, was
+# removed in v0.1.1 per CR.A.10 — never wired up at v0.1.0; deferred to
+# v0.2.0 opt-in observability).
 wal_write_sync_consumer_lag_seconds = Histogram(
     "quorin_wal_write_sync_consumer_lag_seconds",
     "Time from WAL producer XADD to consumer processed-key set, observed by write_sync().",

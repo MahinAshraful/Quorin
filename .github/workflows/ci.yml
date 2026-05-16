@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# CR.C.6 (v0.1.1): least-privilege token. CI only needs to clone +
+# read the repo; no writes, no PR comments, no package ops. Anything
+# more is an open vector for a compromised dependency action.
+permissions:
+  contents: read
+
 jobs:
   lint-type-test:
     runs-on: ubuntu-latest
@@ -20,10 +26,14 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      # CR.C.5 (v0.1.1): pin third-party Actions to commit SHAs, not
+      # floating tags. A tag rewrite (compromised maintainer / squatted
+      # release) would otherwise execute arbitrary code in this workflow.
+      # Inline comment carries the tag-equivalent for human review.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf  # v3 (latest)
         with:
           enable-cache: true
 
@@ -49,5 +59,24 @@ jobs:
           uv run pytest tests/unit tests/integration \
             --cov=quorin \
             --cov-report=term-missing \
-            --cov-fail-under=0
-        # NOTE: --cov-fail-under raised to 85 once real code lands (Step 1+).
+            --cov-fail-under=75
+        # CR.A.11 (v0.1.1): gate raised from 0 → 75. Measured coverage
+        # at v0.1.0 release is ~79%; 75 leaves a small flake margin.
+        # Ratchet up to 80 once any additional tests land.
+
+      # CR.A.12-b (v0.1.1): runnable examples/ as future-drift gate.
+      # Replaces docs-as-doctest (which doesn't parse fenced ```python
+      # blocks); ADR-018 §"Out of scope" + plan.md C3 outline.
+      # Redis is available here (the integration job's redis service
+      # above is reachable on this runner), so all marker-tagged
+      # examples can run.
+      #
+      # ``-o python_files=*.py`` overrides pytest's default ``test_*.py``
+      # glob so example files (``quickstart.py``, ``write_sync.py``,
+      # etc.) get collected — keeps the "runnable demo" affordance
+      # without renaming everything to ``test_*.py``.
+      - name: Pytest examples (drift gate)
+        env:
+          QUORIN_REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          uv run pytest examples/ -o python_files=*.py -v

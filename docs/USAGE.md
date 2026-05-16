@@ -4,8 +4,20 @@ Runnable code examples for every public path. If you want to understand how
 the library works internally instead, see [ARCHITECTURE.md](ARCHITECTURE.md).
 For the per-module API surface, see [API.md](API.md).
 
-Every snippet here has been tested. Copy-paste should work; if anything
-breaks, file an issue.
+For copy-paste-runnable end-to-end scripts, see the
+[`examples/`](../examples/) directory:
+
+| Example | What it shows |
+|---|---|
+| [`examples/quickstart.py`](../examples/quickstart.py) | Define schema, create segment, insert + assemble |
+| [`examples/write_sync.py`](../examples/write_sync.py) | WAL producer + consumer with read-your-own-writes |
+| [`examples/hydration.py`](../examples/hydration.py) | Bulk-load online store from Parquet |
+| [`examples/upgrade.py`](../examples/upgrade.py) | Schema evolution v1 → v2 |
+
+Every example is exercised by `pytest examples/` in CI (CR.A.12-b /
+v0.1.1 future-drift gate); the snippets in this document trace the same
+APIs in narrative form. If anything below breaks against the latest
+release, file an issue.
 
 ---
 
@@ -118,41 +130,57 @@ import redis
 from quorin.wal import WALProducer
 
 # Same schema as before
-r_sync = redis.Redis(host="127.0.0.1", port=6379)
-producer = WALProducer(r_sync, schema=UserFeatures)
+r_sync = redis.Redis(host="127.0.0.1", port=6379, socket_timeout=5.0)
+producer = WALProducer(r_sync)  # accepts optional stream_key=, maxlen=
 
-producer.write(
+msg_id = producer.write(
+    UserFeatures,
     entity_id="user_001",
+    values={
+        "age_normalized": 0.5,
+        "session_count_7d": 42,
+        "ltv_score": 12.3,
+    },
     event_time_ns=time.time_ns(),
-    age_normalized=0.5,
-    session_count_7d=42,
-    ltv_score=12.3,
 )
 ```
 
-`producer.write(...)` returns immediately after the `XADD` to Redis. The
-message is durable but not yet visible to readers — there's a typical 5–50 ms
-gap before the WAL consumer applies it. For most production write paths
-that's fine: writes are eventually consistent with reads.
+`producer.write(...)` returns the Redis-assigned message ID immediately
+after the `XADD`. The message is durable but not yet visible to readers —
+there's a typical 5–50 ms gap before the WAL consumer applies it. For
+most production write paths that's fine: writes are eventually
+consistent with reads.
 
 ### Read your own writes
 
 If you need a write to be visible before continuing, use `write_sync`:
 
 ```python
-producer.write_sync(
-    entity_id="user_001",
-    event_time_ns=time.time_ns(),
-    age_normalized=0.5,
-    session_count_7d=42,
-    ltv_score=12.3,
-    timeout=0.1,  # seconds
-)
+from quorin.wal import WriteSyncTimeoutError
+
+try:
+    msg_id = producer.write_sync(
+        UserFeatures,
+        entity_id="user_001",
+        values={
+            "age_normalized": 0.5,
+            "session_count_7d": 42,
+            "ltv_score": 12.3,
+        },
+        event_time_ns=time.time_ns(),
+        timeout_ms=2000,  # milliseconds — default 100
+    )
+except WriteSyncTimeoutError:
+    # The XADD succeeded; the consumer didn't set the processed-key in
+    # time. The message will be applied eventually unless the consumer
+    # is dead — handle as you would any "best-effort write" timeout.
+    pass
 ```
 
-This blocks until the consumer has applied the message and `SET` a per-message
-side-table key, or raises `WriteSyncTimeout` if the consumer is slow. Costs
-you one consumer-cycle round trip (~5–50 ms on a healthy consumer).
+This blocks until the consumer has applied the message and SET a
+per-message side-table key, or raises `WriteSyncTimeoutError` if the
+consumer is slow. Costs you one consumer-cycle round trip (~5–50 ms on
+a healthy consumer).
 
 ### The consumer (in a separate process)
 
@@ -167,23 +195,28 @@ from quorin.wal_consumer import WALConsumer
 from quorin.offline import ParquetDatasetStore
 
 async def run_consumer():
-    r_async = aioredis.Redis(host="127.0.0.1", port=6379)
-    r_sync = redis.Redis(host="127.0.0.1", port=6379)
+    r_async = aioredis.Redis(host="127.0.0.1", port=6379, socket_timeout=5.0)
+    r_sync = redis.Redis(host="127.0.0.1", port=6379, socket_timeout=5.0)
     registry = SegmentRegistry(r_sync)
-    store = ParquetDatasetStore(
-        root_dir="/var/quorin/offline",
-        schema=UserFeatures,
-    )
+    seg = registry.open_current(UserFeatures)
+    store = ParquetDatasetStore("/var/quorin/offline")
     consumer = WALConsumer(
-        redis=r_async,
+        r_async,
+        segments={UserFeatures.__name__: seg},
+        offline=store,
         registry=registry,
-        schema=UserFeatures,
-        offline_writer=store,
     )
     await consumer.run()
 
 asyncio.run(run_consumer())
 ```
+
+The consumer's `segments` mapping is keyed by `schema.__name__` and the
+mapped value is a live `Segment` (the consumer borrows the segment;
+the caller owns its lifecycle). To consume multiple schemas in one
+consumer, populate the mapping with one entry per schema. The
+`registry` kwarg is required (the Step-15 pause-and-reopen safety
+net depends on it).
 
 Note that the producer takes a synchronous Redis client and the consumer
 takes an async one. This is intentional — `redis-py` doesn't unify them.
@@ -220,7 +253,7 @@ input shape. If the entity isn't in the segment, `assemble` raises
 `EntityNotFoundError` — catch it and route to your fallback (a default-row
 heuristic, a Redis lookup of cold features, etc.).
 
-### With a buffer pool (eliminates one allocation per call)
+### With a buffer pool (reduces GC pressure)
 
 ```python
 from quorin.pool import BufferPool
@@ -235,9 +268,12 @@ with pool.checkout() as buf:
 # buf is automatically returned to the pool here
 ```
 
-The pool is opt-in for single-entity reads (it adds 2–4 µs of context-manager
-overhead on commodity hardware) but reduces GC pressure. See ADR-005 for the
-honest measured tradeoff.
+The pool's headline value is **GC-pressure reduction**, not single-call
+latency: at the 4.48 µs p99 hot path the pool's checkout adds ~2-4 µs
+on native CI (ADR-005 amendments), so for cost-sensitive single-entity
+reads the no-pool path is faster. The pool's real wins are batch
+assembly (next section) and high-allocation workloads where the
+~80-100 ns `np.empty(N, float32)` cost compounds.
 
 ---
 
@@ -262,20 +298,22 @@ predictions = model.predict(present)
 Missing entities (not in the segment) are returned as zero-filled rows; the
 returned `found_mask` is a boolean array indicating which rows are valid.
 
-The batch path uses a separate buffer pool (`BatchBufferPool`) when given an
-explicit `out=` argument. This is where buffer pools win decisively — a
-single batch buffer at N=1000, 200 fields is ~1.6 MB; pre-allocating it
-saves a real allocation cost.
+The batch path can use a `BatchBufferPool` to avoid the per-call
+output-buffer allocation, which is where buffer pools win decisively
+— a single batch buffer at N=1000, 200 fields is ~1.6 MB.
 
 ```python
 from quorin.pool import BatchBufferPool
 
 batch_pool = BatchBufferPool(UserFeatures, batch_size=1000, max_size=8)
 
-with batch_pool.checkout() as out_buf:
-    found_mask = batch_pool.checkout_mask()  # separately
-    assemble_batch(seg, entity_ids, out=out_buf, found_mask=found_mask)
-    predictions = model.predict(out_buf[found_mask])
+with batch_pool.checkout() as buf:
+    # buf is the (batch_size, element_count) output array. Pass it to
+    # assemble_batch via the out= kwarg; the kernel zero-fills missing
+    # entities so the BatchBufferPool's zero_on_return=False default
+    # is safe (see ADR-007). The found_mask is returned separately.
+    features, found_mask = assemble_batch(seg, entity_ids, out=buf)
+    predictions = model.predict(features[found_mask])
 ```
 
 For batch sizes above an adaptive threshold (computed from
@@ -294,24 +332,28 @@ values into a training set causes data leakage: the model trains on
 information it wouldn't have had at prediction time.
 
 ```python
+import pyarrow as pa
 from quorin.offline import ParquetDatasetStore
 
-store = ParquetDatasetStore(
-    root_dir="/var/quorin/offline",
-    schema=UserFeatures,
-)
+store = ParquetDatasetStore("/var/quorin/offline")
 
-# Each query is (entity_id, as_of_timestamp_ns)
-queries = [
-    ("user_001", 1715040000_000_000_000),  # 2024-05-07 00:00:00 UTC
-    ("user_002", 1715126400_000_000_000),  # 2024-05-08 00:00:00 UTC
-    # ... thousands more
-]
+# Build the query table — Quorin's read_point_in_time takes a
+# pa.Table with two columns: entity_id (string) and as_of_time_ns
+# (int64). Hand-rolled here; in real workloads the queries come from
+# a labeling system or training pipeline.
+query_table = pa.table({
+    "entity_id": ["user_001", "user_002"],
+    "as_of_time_ns": [
+        1715040000_000_000_000,  # 2024-05-07 00:00:00 UTC
+        1715126400_000_000_000,  # 2024-05-08 00:00:00 UTC
+    ],
+})
 
-table = store.read_point_in_time(queries, lookback_days=30)
+table = store.read_point_in_time(UserFeatures, query_table, lookback_days=30)
 # Returns a PyArrow Table with one row per query, populated with each
 # entity's most-recent feature values that existed at or before its
-# as_of_timestamp.
+# as_of_time_ns. Entities with no rows in the lookback window are
+# included with null feature columns.
 ```
 
 `read_point_in_time` is synchronous (CPU + IO bound, not awaitable). Async
@@ -331,19 +373,24 @@ rebuilds the segment from the offline store.
 from quorin.hydration import hydrate
 
 result = hydrate(
-    redis=r,
-    schema=UserFeatures,
-    store=store,
-    capacity=1_000_000,
-    max_id_bytes=64,
+    UserFeatures,
+    store,
+    registry,
+    redis_client=r,
+    capacity_factor=4.0,  # 4x entity count → segment capacity
+    lookback_days=30,
 )
-print(f"Hydrated {result.rows} rows in {result.duration_seconds:.2f}s")
+print(f"Hydrated {result.entity_count} entities in {result.elapsed_seconds:.2f}s")
+print(f"new segment: {result.segment_name}")
 ```
 
-For 1 million entities × 50 fields, this takes around 2–3 seconds on bare
-metal (about 10 seconds on WSL2). Run it before starting your WAL consumer;
-the hydrate function checks for preconditions (no current segment, no live
-WAL consumer) and refuses to run if either is present.
+For 1 million entities × 50 fields, this takes ~9.9 s on WSL2 and is
+projected at 1.2-2.5 s on bare metal (CLAUDE.md §8 "Step 15 spec
+acceptance"). Run it before starting your WAL consumer; the hydrate
+function checks for preconditions (no current segment, no live WAL
+consumer) and refuses with `HydrationConflictError` if either is
+present. `EmptyDatasetError` if the lookback window contains zero
+entities.
 
 ---
 
@@ -368,17 +415,28 @@ class UserFeaturesV2(FeatureSchema):
         FeatureField("session_count_30d", dtype.int64),
     ]
 
-# Pure check, no Redis touched
-ok, reason = can_upgrade(UserFeatures, UserFeaturesV2)
-assert ok, reason
+# Pure check, no Redis touched. Returns (bool, list[str]); the list
+# is empty when ok is True and human-readable failure descriptions
+# otherwise.
+ok, reasons = can_upgrade(UserFeatures, UserFeaturesV2)
+assert ok, reasons
 
 result = upgrade_schema(
-    redis=r,
-    old=UserFeatures,
-    new=UserFeaturesV2,
+    UserFeatures,
+    UserFeaturesV2,
+    registry,
+    redis_client=r,
 )
-print(f"Upgraded {result.rows} rows in {result.duration_seconds:.2f}s")
+print(f"Upgraded {result.entity_count} entities in {result.elapsed_seconds:.2f}s")
 ```
+
+> **v0.1.1 note:** 2D-shape upgrades are deferred to v0.2.0 (CR.A.4 /
+> ADR-018). `can_upgrade` returns `(False, ["...2D-shape upgrade not
+> yet supported..."])` for any schema with a 2D field; workaround is
+> to introduce a new 1D field and deprecate the 2D one. Operators
+> attempting an upgrade no longer need to manually `XTRIM` the WAL
+> stream first — the precondition is now `XPENDING == 0`, not
+> `XLEN == 0` (CR.A.13 / ADR-018).
 
 The upgrade is online: live readers against the OLD segment continue to work
 during the entire copy, and atomically flip to NEW when the copy completes.
@@ -425,17 +483,24 @@ Optional. If you don't call it, counters still increment in memory and are
 visible to tests; they just aren't scraped. Prometheus scrapes from the
 `/metrics` endpoint at the given port.
 
-Available metrics include `quorin_read_latency_seconds` (per-schema histogram),
-`quorin_gc_pause_seconds` (per-generation histogram), `quorin_wal_lag_seconds`
-(producer→consumer lag), `quorin_pool_miss_total` (per-schema counter), plus
-watchdog cleanup counters and schema-upgrade timing histograms.
+Available metrics include `quorin_gc_pause_seconds` (per-generation histogram),
+`quorin_pool_miss_total` (per-schema counter), `quorin_wal_write_latency_seconds`,
+`quorin_wal_consumer_apply_total` (consumer outcome counter),
+`quorin_offline_flush_seconds`, watchdog cleanup counters, and schema-upgrade
+timing histograms.
+
+> **Note:** v0.1.0 declared `quorin_read_latency_seconds` and
+> `quorin_wal_lag_seconds` but never observed them; both were removed in
+> v0.1.1 (CR.A.9 / CR.A.10). Hot-path latency observation costs ~30 ns per
+> call on the 4.48 µs p99 budget; v0.2.0 will ship opt-in instrumentation
+> behind an environment-variable flag.
 
 ### Configure structured logging
 
 ```python
 import quorin.logging
 
-quorin.logging.configure(level="INFO", json=True)
+quorin.logging.configure(level="INFO")  # JSON renderer is the default
 log = quorin.logging.get_logger("my_service")
 log.info("started", schema="UserFeatures", capacity=1_000_000)
 ```
