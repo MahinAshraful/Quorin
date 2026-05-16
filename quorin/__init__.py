@@ -12,9 +12,18 @@ For non-evolution modules, import from the specific module:
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
-__version__ = "0.1.0"
+# CR.A.12 / v0.1.1: single source of truth via importlib.metadata.
+# pyproject.toml's ``project.version`` is the canonical declaration;
+# this resolves it at import time so the wheel and __version__ never
+# drift. Falls back to "0+unknown" only for editable installs without
+# wheel metadata (rare; uv/pip install -e populates metadata).
+try:
+    __version__ = version("quorin")
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "0+unknown"
 
 if TYPE_CHECKING:  # mypy + IDE see the names directly
     # Redundant aliases (`as Name`) silence the F401-in-TYPE_CHECKING-block

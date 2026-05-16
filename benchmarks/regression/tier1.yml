@@ -36,7 +36,12 @@
 # Step 1 — schema compile
 # -----------------------------------------------------------------------
 test_compile_schema_200_fields:
-  p99_seconds: 0.001            # 1 ms — startup-only, off the hot path
+  # QW-3 (v0.1.1): bumped from 1 ms to 2.5 ms. Native-CI baseline measured
+  # ~809 µs (1.24x over the prior 1ms gate); startup-path benches have
+  # ~1.2-1.5x variance from page-cache state alone. 2.5 ms = 3.1x measured
+  # = honest headroom against future flake without losing regression
+  # signal on real degradation.
+  p99_seconds: 0.0025           # 2.5 ms — startup-only, off the hot path
 
 # -----------------------------------------------------------------------
 # Step 4 — Python oracle (assemble baseline; superseded by Numba in Step 5)

@@ -139,10 +139,17 @@ _HYPO = settings(
 
 
 @_HYPO
-@given(data=st.binary(min_size=0, max_size=300))
+@given(data=st.binary(min_size=0, max_size=4096))
 def test_parity_against_hashlib(data: bytes) -> None:
-    """For any random input ≤ 300 bytes (covers 0, single-block, and multi-
-    block paths), the Numba kernel matches hashlib.blake2b byte-for-byte."""
+    """For any random input ≤ 4 KB (covers 0, single-block,
+    multi-block, and realistic-max-entity-id paths), the Numba kernel
+    matches hashlib.blake2b byte-for-byte.
+
+    QW-2 (v0.1.1): bumped from 300 → 4096. Real entity_ids can reach
+    max_id_bytes (default 64, configurable up to MAX_ID_BYTES_CEILING
+    = 64 KiB per CR.H.4); 4 KB covers compound-key + UUID-prefix +
+    namespace tenants without making the test slow.
+    """
     arr = np.frombuffer(data, dtype=np.uint8).copy() if data else np.zeros(0, dtype=np.uint8)
     expected = int.from_bytes(hashlib.blake2b(data, digest_size=8).digest(), "little", signed=False)
     actual = int(blake2b_8(arr, len(data)))
