@@ -310,9 +310,20 @@ def test_hash_collision_probing_path(monkeypatch: pytest.MonkeyPatch) -> None:
     ~1/2^64 and would never naturally exercise this path. Mirrors the
     pattern in tests/unit/test_layout.py::test_hash_collision_path.
     """
-    # Force every hash_entity_id call to return the same value. The slot
-    # table will then have multiple OCCUPIED slots whose hashes match every
-    # query; the byte-compare in the kernel must resolve them.
+    # Force every hash call to return the same value. The slot table will
+    # then have multiple OCCUPIED slots whose hashes match every query; the
+    # byte-compare in the kernel must resolve them.
+    #
+    # Three call sites need patching:
+    #   - quorin._internal.hash_id.hash_entity_id — used by layout.insert
+    #   - quorin.layout.hash_entity_id            — used by layout.lookup
+    #   - quorin.assembly.blake2b_8                — used by assemble_batch
+    #
+    # Pre-v0.1.2, assemble_batch called hash_entity_id at the Python level.
+    # v0.1.2 §2.1 swapped it for blake2b_8 (Numba kernel) called from a
+    # Python loop. The kernel call inside _assemble_batch_core works off
+    # the precomputed id_hashes uint64 array, so this Python-level patch
+    # is sufficient — the kernel sees whatever hash we wrote into the array.
     import quorin._internal.hash_id as hash_id_mod
     import quorin.assembly as assembly_mod
     import quorin.layout as layout_mod
@@ -320,7 +331,7 @@ def test_hash_collision_probing_path(monkeypatch: pytest.MonkeyPatch) -> None:
     fixed_hash = 0xDEADBEEF_CAFEBABE
     monkeypatch.setattr(hash_id_mod, "hash_entity_id", lambda _eid: fixed_hash)
     monkeypatch.setattr(layout_mod, "hash_entity_id", lambda _eid: fixed_hash)
-    monkeypatch.setattr(assembly_mod, "hash_entity_id", lambda _eid: fixed_hash)
+    monkeypatch.setattr(assembly_mod, "blake2b_8", lambda _buf, _n: fixed_hash)
 
     seg = make_segment(_OneScalarF32, capacity=8)
     try:

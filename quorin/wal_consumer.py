@@ -84,6 +84,7 @@ from quorin.logging import get_logger
 from quorin.metrics import (
     evolution_consumer_pause_seconds,
     wal_consumer_apply_total,
+    wal_consumer_backpressure_alerted_total,
     wal_consumer_batch_size,
     wal_consumer_flush_seconds,
     wal_consumer_liveness_age_seconds,
@@ -139,6 +140,18 @@ CONSUMER_LOCK_TTL_SECONDS = 60
 KEY_WAL_CONSUMER_LIVENESS = b"quorin:wal_consumer:liveness"
 LIVENESS_REFRESH_INTERVAL_SECONDS = 10
 LIVENESS_TTL_SECONDS = 30
+
+# CR.C.4 (v0.1.2): cap on distinct unknown-schema labels we'll track. Above
+# this the counter increments under ``<other>`` and ``_seen_unknown`` stops
+# growing. 1024 is generous for any realistic multi-schema deployment while
+# bounding Prometheus label child memory + scrape size.
+_UNKNOWN_SCHEMA_CARDINALITY_CAP = 1024
+
+# CR.B.13 (v0.1.2): how long the consumer can sit at the ``2x max_pending_ack``
+# hard ceiling before we log an ERROR + bump ``backpressure_alerted`` counter.
+# 60s is long enough that healthy bursts (flush_interval bounce) don't trip;
+# short enough that a real wedge gets visibility within one alerting cycle.
+_BACKPRESSURE_ALERT_SECONDS = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +283,7 @@ class WALConsumer:
         "_c_apply_dup",
         "_c_apply_err",
         "_c_apply_ok",
+        "_c_backpressure_alerted",
         "_c_crc_mismatch",
         "_c_liveness_err",
         "_c_liveness_ok",
@@ -389,6 +403,9 @@ class WALConsumer:
         # label-less counters but the attr-access pattern stays uniform.
         self._c_poison_pill = wal_consumer_poison_pill_total
         self._c_crc_mismatch = wal_consumer_schema_crc_mismatch_total
+        # CR.B.13 (v0.1.2): increments each time we cross the 60s wedged-flush
+        # threshold. Operators alert on rate > 0.
+        self._c_backpressure_alerted = wal_consumer_backpressure_alerted_total
 
         # Liveness state — `_pid_str` and `_liveness_last_refresh` are
         # re-seeded at run() startup (force-first-refresh pattern) so the
@@ -760,13 +777,36 @@ class WALConsumer:
     async def _read_new_batch(
         self,
     ) -> list[tuple[bytes, dict[bytes, bytes]]]:
-        res = await self._redis.xreadgroup(
-            groupname=self._group_name,
-            consumername=self._consumer_name,
-            streams={self._stream_key: ">"},
-            count=self._batch_count,
-            block=self._block_ms,
-        )
+        try:
+            res = await self._redis.xreadgroup(
+                groupname=self._group_name,
+                consumername=self._consumer_name,
+                streams={self._stream_key: ">"},
+                count=self._batch_count,
+                block=self._block_ms,
+            )
+        except redis.exceptions.ResponseError as e:
+            # CR.B.14 (v0.1.2): operator-deleted stream or group raises
+            # ``NOGROUP No such key 'quorin:wal' or consumer group ...``.
+            # Without this catch, the run loop propagates the error and the
+            # consumer process dies — an operator action (``XGROUP DESTROY``,
+            # ``DEL quorin:wal``, or a Redis flush) shouldn't take production
+            # down. Recreate the group via ``_ensure_group`` (id="0" semantics
+            # — drain the entire stream the recreated group sees) and return
+            # an empty batch; the outer loop calls us again on next tick.
+            #
+            # ResponseError MUST be caught BEFORE any RedisError (same
+            # hierarchy gotcha as ADR-013's ZombieProcess/NoSuchProcess).
+            # The "NOGROUP" string match is the redis-py 5.x error format.
+            if "NOGROUP" in str(e):
+                logger.warning(
+                    "wal_consumer.nogroup_recreating",
+                    error=str(e),
+                    msg="Stream or consumer group was deleted; recreating.",
+                )
+                await self._ensure_group()
+                return []
+            raise
         if not res:
             return []
         msgs: list[tuple[bytes, dict[bytes, bytes]]] = res[0][1]
@@ -780,8 +820,33 @@ class WALConsumer:
         """
         wal_consumer_batch_size.observe(len(msgs))
 
-        # Hard ceiling — ADR-009 §6 (review #C).
+        # Hard ceiling — ADR-009 §6 (review #C). CR.B.13 (v0.1.2): escalate
+        # to a loud signal when we've been at the ceiling for ≥60s — that's
+        # a wedged flush task (full disk, NFS stuck, deterministic offline
+        # failure on every retry). Without escalation the consumer enters a
+        # silent spin: `pending_ack` never decreases, no log fires, no metric
+        # transitions. The `_pending_ack_size` gauge climbs to 2x and stays;
+        # operators may not connect that to "flush is stuck."
+        backpressure_start: float | None = None
         while len(self._pending_ack) >= 2 * self._max_pending_ack and not self._stop_event.is_set():
+            if backpressure_start is None:
+                backpressure_start = time.monotonic()
+            elif time.monotonic() - backpressure_start >= _BACKPRESSURE_ALERT_SECONDS:
+                logger.error(
+                    "wal_consumer.backpressure_exceeded",
+                    pending_ack_size=len(self._pending_ack),
+                    max_pending_ack=self._max_pending_ack,
+                    stuck_seconds=int(time.monotonic() - backpressure_start),
+                    msg=(
+                        "pending_ack at hard ceiling for >= "
+                        f"{_BACKPRESSURE_ALERT_SECONDS}s — flush task is "
+                        "likely wedged (full disk / NFS stuck / deterministic "
+                        "offline failure). Investigate offline writer state."
+                    ),
+                )
+                self._c_backpressure_alerted.inc()
+                # Reset so we don't spam a log line per 10ms sleep iteration.
+                backpressure_start = time.monotonic()
             await asyncio.sleep(0.01)
 
         applied: list[bytes] = []
@@ -826,16 +891,27 @@ class WALConsumer:
 
         schema = self._schemas.get(schema_name)
         if schema is None:
-            if schema_name not in self._seen_unknown:
-                self._seen_unknown.add(schema_name)
-                logger.warning(
-                    "unknown_schema",
-                    schema_name=schema_name,
-                    msg_id=msg_id,
-                )
-            wal_consumer_unknown_schema_total.labels(
-                schema_name=schema_name.decode("utf-8", "replace")
-            ).inc()
+            # CR.C.4 (v0.1.2): cap unknown-schema label cardinality. Without
+            # this, a buggy or malicious producer that emits unique schema
+            # names balloons ``self._seen_unknown`` (memory leak) and the
+            # prometheus label child set (~0.5 MB/hr at sustained rates +
+            # Prometheus scrape bloat). At UNKNOWN_SCHEMA_CARDINALITY_CAP
+            # distinct names, swap to a constant ``<other>`` label and stop
+            # appending. The bounded set still tracks the canonical-named
+            # variants for ops; the counter still increments per message,
+            # just under the ``<other>`` bucket once we cap.
+            if len(self._seen_unknown) >= _UNKNOWN_SCHEMA_CARDINALITY_CAP:
+                label_value = "<other>"
+            else:
+                label_value = schema_name.decode("utf-8", "replace")
+                if schema_name not in self._seen_unknown:
+                    self._seen_unknown.add(schema_name)
+                    logger.warning(
+                        "unknown_schema",
+                        schema_name=schema_name,
+                        msg_id=msg_id,
+                    )
+            wal_consumer_unknown_schema_total.labels(schema_name=label_value).inc()
             return False
 
         # Guard the entity_id decode separately from the rest of the apply

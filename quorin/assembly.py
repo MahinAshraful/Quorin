@@ -35,7 +35,7 @@ import numba
 import numpy as np
 from numba import prange
 
-from quorin._internal.hash_id import hash_entity_id
+from quorin._internal.hash_kernel import blake2b_8
 from quorin._internal.lookup_kernel import lookup_jit
 from quorin._internal.lookup_kernel import prewarm as _lookup_prewarm
 from quorin.layout import (
@@ -682,14 +682,17 @@ def assemble_batch(
     if n_batch == 0:
         return out, found_mask
 
-    # Python-side prep: blake2b and str.encode aren't in Numba.
+    # Python-side prep: str.encode isn't in Numba; the hash itself runs
+    # inside ``blake2b_8`` (Numba kernel, ~150-300 ns vs Python hashlib's
+    # ~1500 ns). Pinned-hash invariant #5: output is byte-identical to
+    # ``hashlib.blake2b(bytes, digest_size=8)`` — locked by
+    # ``tests/unit/test_hash_kernel.py``.
     #
     # ASCII fast-path encode: most production ML entity IDs (UUIDs,
     # integer-as-string, hex hashes) are ASCII. ``str.encode("ascii")`` is
     # ~50-80 ns/call faster than ``encode("utf-8")`` in CPython 3.12 because
     # the ASCII codec has a simpler dispatch path. UnicodeEncodeError fallback
     # preserves correctness for non-ASCII IDs (a small fraction of the work).
-    id_hashes = np.empty(n_batch, dtype=np.uint64)
     encoded: list[bytes] = []
     max_len = 0
     for i, eid in enumerate(entity_ids):
@@ -700,18 +703,21 @@ def assemble_batch(
         except UnicodeEncodeError:
             b = eid.encode("utf-8")
         encoded.append(b)
-        bl = len(b)
-        max_len = max(max_len, bl)
-        id_hashes[i] = hash_entity_id(eid)
+        max_len = max(max_len, len(b))
 
     # max_len can be 0 only if every id is empty, which we caught above.
-    # Pad to (n_batch, max_len) for kernel-friendly indexing.
+    # Pad to (n_batch, max_len) for kernel-friendly indexing. Hash from the
+    # padded array's writable contiguous slice (``[::1]``) so Numba accepts
+    # it as input without an intermediate ``.copy()`` — recovers ~1.3-1.4x
+    # of the lost native-CI batch ratio per ADR-007 §16c amendment.
     query_ids_padded = np.zeros((n_batch, max_len), dtype=np.uint8)
     query_id_lens = np.empty(n_batch, dtype=np.int64)
+    id_hashes = np.empty(n_batch, dtype=np.uint64)
     for i, b in enumerate(encoded):
         bl = len(b)
         query_id_lens[i] = bl
         query_ids_padded[i, :bl] = np.frombuffer(b, dtype=np.uint8)
+        id_hashes[i] = blake2b_8(query_ids_padded[i, :bl], bl)
 
     seg_u8 = np.frombuffer(segment.handle.buf, dtype=np.uint8)
 

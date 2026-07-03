@@ -125,6 +125,16 @@ wal_consumer_unknown_schema_total = Counter(
     registry=registry,
 )
 
+# CR.B.13 (v0.1.2): increments each time the consumer sits at the
+# ``2x max_pending_ack`` hard ceiling for ``_BACKPRESSURE_ALERT_SECONDS``.
+# Indicates a wedged offline-writer flush (full disk, NFS stuck, deterministic
+# failure on every retry). Operators alert on rate > 0 over 5 minutes.
+wal_consumer_backpressure_alerted_total = Counter(
+    "quorin_wal_consumer_backpressure_alerted_total",
+    "Consumer back-pressure hit the hard ceiling for >= 60s (wedged flush).",
+    registry=registry,
+)
+
 # Pending-ACK queue depth — depth grows when offline.flush is slow or
 # stuck. Operators alert on this exceeding `max_pending_ack`.
 wal_consumer_pending_ack_size = Gauge(

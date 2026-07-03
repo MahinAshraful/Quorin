@@ -116,12 +116,31 @@ boundaries; ``_DTYPE_BYTE_SIZE`` stays private because it's used only inside
 # ---------------------------------------------------------------------------
 
 
+# CR.C.2 (v0.1.2): caps on per-field shape/byte counts. Without these, a
+# buggy or malicious schema can request a multi-GB segment that OOMs the
+# host or SIGBUSes on first write. Limits are intentionally generous —
+# wider than any realistic ML feature workload (4096-d LLM embedding fits
+# at 16 KiB) but tight enough to reject `shape=(2**30,)`-class inputs at
+# the boundary instead of inside ``compute_layout``.
+MAX_ELEMENT_COUNT = 1 << 24
+"""Maximum elements per ``FeatureField`` (~16M). Bounds the largest single
+field; an entire-segment cap lives at ``quorin.layout.MAX_TOTAL_SEGMENT_BYTES``."""
+
+MAX_FIELD_BYTES = 1 << 28
+"""Maximum bytes per ``FeatureField`` (256 MiB). Caps element_count x dtype size
+even when element_count alone would pass — e.g., ``shape=(2**23,)`` float64."""
+
+
 @dataclass(frozen=True, slots=True)
 class FeatureField:
     """One typed field in a FeatureSchema.
 
     ``shape=()`` means a scalar. Shapes with zero or negative dims are rejected.
     Variable-length shapes (e.g. ``(None, 128)``) are not supported in v1.
+
+    Per-field shape is bounded by :data:`MAX_ELEMENT_COUNT` and
+    :data:`MAX_FIELD_BYTES` (CR.C.2). The whole-segment ceiling lives at
+    :data:`quorin.layout.MAX_TOTAL_SEGMENT_BYTES`.
     """
 
     name: str
@@ -141,6 +160,24 @@ class FeatureField:
                 raise TypeError(f"shape dimensions must be int, got {type(d).__name__}")
             if d <= 0:
                 raise ValueError(f"shape dimensions must be positive, got {self.shape}")
+        # CR.C.2: bound element_count + byte_count at the dataclass boundary.
+        # Computing them here is safe — ``shape`` is already fully validated.
+        elements = 1
+        for d in self.shape:
+            elements *= d
+        if elements > MAX_ELEMENT_COUNT:
+            raise ValueError(
+                f"FeatureField {self.name!r} has element_count={elements} > "
+                f"MAX_ELEMENT_COUNT={MAX_ELEMENT_COUNT}. Realistic ML feature "
+                f"workloads fit comfortably below this cap; reduce shape={self.shape}."
+            )
+        bytes_per_elem = _DTYPE_BYTE_SIZE[self.dtype]
+        if elements * bytes_per_elem > MAX_FIELD_BYTES:
+            raise ValueError(
+                f"FeatureField {self.name!r} has byte_count="
+                f"{elements * bytes_per_elem} > MAX_FIELD_BYTES={MAX_FIELD_BYTES} "
+                f"(shape={self.shape}, dtype={self.dtype.name})."
+            )
 
     @property
     def element_count(self) -> int:

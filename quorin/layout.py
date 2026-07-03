@@ -138,6 +138,17 @@ DEFAULT_MAX_ID_BYTES: Final[int] = 64
 #: that would matter for memory pressure.
 MAX_ID_BYTES_CEILING: Final[int] = 64 * 1024
 
+#: Hard ceiling on whole-segment byte size (CR.C.2 / v0.1.2). Defends against
+#: a buggy or malicious schema x capacity combination that would request a
+#: multi-100-GB segment, triggering ENOMEM, ENOSPC, or SIGBUS on first write.
+#: 64 GiB covers any single-node workload while remaining well below the
+#: physical memory of even modestly-sized production hosts.
+#:
+#: Per-field bounds are at :data:`quorin.schema.MAX_ELEMENT_COUNT` /
+#: :data:`quorin.schema.MAX_FIELD_BYTES`; this one bounds the product
+#: ``row_size x capacity + slot_table + string_pool`` after they multiply.
+MAX_TOTAL_SEGMENT_BYTES: Final[int] = 1 << 36
+
 #: Where the writer-cursors metadata region begins (just after the 16-byte
 #: primary header from Step 2).
 METADATA_OFFSET: Final[int] = 16
@@ -287,6 +298,18 @@ def compute_layout(
     feature_rows_end = feature_rows_offset + feature_rows_bytes
 
     total_size = _align_up(feature_rows_end, PAGE_SIZE)
+
+    # CR.C.2 (v0.1.2): whole-segment ceiling. Per-field bounds at
+    # ``quorin.schema.MAX_FIELD_BYTES`` cap one field; this catches the
+    # product of many fields x large capacity.
+    if total_size > MAX_TOTAL_SEGMENT_BYTES:
+        raise ValueError(
+            f"computed segment total_size {total_size} bytes exceeds "
+            f"MAX_TOTAL_SEGMENT_BYTES={MAX_TOTAL_SEGMENT_BYTES} "
+            f"(schema={schema.__name__}, capacity={capacity}, "
+            f"max_id_bytes={max_id_bytes}, row_size={rs}). "
+            "Reduce capacity or shard horizontally."
+        )
 
     asm = compute_assembly_table(schema)
     return SegmentLayout(

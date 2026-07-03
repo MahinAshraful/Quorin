@@ -51,7 +51,7 @@ Histogram observe + counter <2 us
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import msgpack  # type: ignore[import-untyped]
 
@@ -83,6 +83,17 @@ DEFAULT_STREAM_KEY = b"quorin:wal"
 
 DEFAULT_MAXLEN = 1_000_000
 """Approximate stream cap. At 10k writes/s, covers 100 s of consumer downtime."""
+
+MAX_ENTITY_ID_BYTES: Final[int] = 256
+"""CR.C.3 (v0.1.2): producer-side bound on ``entity_id`` UTF-8 length.
+
+Without this, a single oversized ID (e.g. 100 MB) lands in the Redis Stream
+via XADD, gets PEL-stuck on consumer apply (the consumer's ``layout.insert``
+raises ``StringPoolExhaustedError`` for IDs > ``max_id_bytes``), and forces
+infinite retry. Bound at the producer boundary so bad input never reaches
+Redis. 256 bytes covers UUIDs (36), prefixed UUIDs (~41), compound keys
+(~56), and gives generous headroom while staying well under the consumer-
+side ``MAX_ID_BYTES_CEILING`` (64 KiB)."""
 
 PROCESSED_KEY_PREFIX = b"quorin:processed:"
 """Side-table prefix written by the consumer; polled by ``write_sync``."""
@@ -251,12 +262,25 @@ class WALProducer:
         a separate bug class (the producer process is wedged) and would see
         the side-table entry expire mid-poll.
 
+        **Interaction with consumer flush cadence (CR.E.5, v0.1.2):** the
+        consumer's ``OfflineWriter.flush()`` blocks the asyncio loop for
+        ~100-200 ms per call (see ADR-010 §8). With the default
+        ``flush_interval_seconds=60`` + ``max_pending_ack=10000``, ~10
+        flushes/min stall consumer-side SET pipelining. ANY ``write_sync``
+        whose corresponding consumer batch overlaps a flush window times
+        out at the default 100 ms ``timeout_ms`` — empirically ~1.6% of
+        calls. To eliminate timeouts: either bump ``timeout_ms`` to 500
+        ms+ (recommended for ``write_sync`` callers), or reduce the
+        consumer's ``max_pending_ack`` so flushes complete faster.
+
         Raises:
             WriteSyncTimeoutError: The consumer did not set the processed key
                 before the deadline. The XADD itself succeeded; the message
                 will be processed eventually unless the consumer is dead.
             pydantic.ValidationError, redis.exceptions.ConnectionError,
             redis.exceptions.ResponseError: as :meth:`write`.
+            ValueError: ``entity_id`` UTF-8 length exceeds
+                :data:`MAX_ENTITY_ID_BYTES` (256). See CR.C.3.
         """
         t0 = time.perf_counter()
         try:
@@ -306,6 +330,21 @@ class WALProducer:
 
         schema_name_bytes = self._encoded_schema_name(schema)
         entity_id_bytes = entity_id.encode("utf-8")
+        # CR.C.3 (v0.1.2): reject oversize ``entity_id`` AT THE PRODUCER so
+        # a single malformed write never lands in Redis. Without this the
+        # consumer eventually raises ``StringPoolExhaustedError`` deep
+        # inside ``layout.insert``, the message stays in PEL with retry
+        # storms, and ``_apply`` catches with a generic ``except Exception``
+        # — symptom is unbounded PEL growth, no obvious metric signal.
+        # Encoding to UTF-8 first (rather than capping ``len(entity_id)``)
+        # because multi-byte chars can be >1 byte each; the consumer-side
+        # bound is in bytes, not codepoints, so match here.
+        if len(entity_id_bytes) > MAX_ENTITY_ID_BYTES:
+            raise ValueError(
+                f"entity_id UTF-8 length {len(entity_id_bytes)} exceeds "
+                f"MAX_ENTITY_ID_BYTES={MAX_ENTITY_ID_BYTES}. "
+                "Hash the ID first if it's genuinely large."
+            )
         if event_time_ns is None:
             event_time_ns = time.time_ns()
         event_time_bytes = str(event_time_ns).encode("ascii")

@@ -233,6 +233,7 @@ def test_kernel_returns_minus_one_sentinel_directly() -> None:
                 SLOT_ID_OFFSET_OFFSET,
                 SLOT_FLAGS_OFFSET,
                 SLOT_FEATURE_ROW_INDEX_OFFSET,
+                np.int64(layout.max_id_bytes),  # CR.B.2 defense-in-depth bound
             )
         )
 

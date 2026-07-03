@@ -79,7 +79,7 @@ if TYPE_CHECKING:
 @numba.njit(  # type: ignore[untyped-decorator]
     "int64(uint8[::1], uint8[::1], int64,"
     " int64, int64, int64, int64, int64,"
-    " int64, int64, int64, int64, int64)",
+    " int64, int64, int64, int64, int64, int64)",
     cache=True,
     boundscheck=False,
     fastmath=False,
@@ -98,6 +98,7 @@ def _lookup_core(
     slot_id_off_off: int,
     slot_flags_off: int,
     slot_feature_row_idx_off: int,
+    max_id_bytes: int,
 ) -> int:
     """Linear-probe lookup against the AoS slot table.
 
@@ -146,6 +147,17 @@ def _lookup_core(
             slot_id_offset = seg_u8[io_off : io_off + 8].view(np.uint64)[0]
             pool_entry_abs = string_pool_data_offset + slot_id_offset
             pool_len = seg_u8[pool_entry_abs : pool_entry_abs + 4].view(np.uint32)[0]
+            # CR.B.2: defense-in-depth. A corrupt string-pool entry with
+            # ``pool_len > max_id_bytes`` would, with ``boundscheck=False``,
+            # let the byte-compare below read past the string-pool region
+            # — producing a false-positive hit if those bytes happen to
+            # match the query, or a silent false-miss otherwise. Bound the
+            # value to the layout-declared ceiling; treat corrupt entries
+            # as ``not-found`` (kernel returns -1; Python oracle raises
+            # ``ValueError`` instead — documented divergence, kernel is
+            # fast-path so degraded-correct on corruption is acceptable).
+            if pool_len > max_id_bytes:
+                return -1
             if pool_len == encoded_id_len:
                 match = True
                 for k in range(encoded_id_len):
@@ -189,9 +201,17 @@ def lookup_jit(segment: Segment, entity_id: str) -> int | None:
 
     layout = segment.layout
     encoded = entity_id.encode("utf-8")
-    # Numba 0.60's uint8[::1] signature requires writable arrays for input
-    # params. np.frombuffer(bytes, ...) returns a read-only view; .copy()
+    # Numba 0.60's ``uint8[::1]`` dispatch distinguishes writable vs
+    # ``readonly array(uint8, 1d, C)`` and rejects the latter (verified
+    # empirically — dropping ``.copy()`` raises ``TypeError: No matching
+    # definition`` at first call). ``np.frombuffer(bytes, ...)`` returns
+    # a read-only view because Python ``bytes`` is immutable; ``.copy()``
     # materializes a writable contiguous array. ~80 ns at max-64-byte IDs.
+    #
+    # The ``assemble_batch`` path uses a writable padded array because it
+    # ASSIGNS frombuffer slices INTO ``query_ids_padded = np.zeros(...)``;
+    # the writable flag comes from the target, not the source. Tried in
+    # v0.1.2 plan (QW-1), reverted after parity tests went red.
     encoded_arr = np.frombuffer(encoded, dtype=np.uint8).copy()
 
     seg_u8 = np.frombuffer(segment.handle.buf, dtype=np.uint8)
@@ -212,6 +232,7 @@ def lookup_jit(segment: Segment, entity_id: str) -> int | None:
         SLOT_ID_OFFSET_OFFSET,
         SLOT_FLAGS_OFFSET,
         SLOT_FEATURE_ROW_INDEX_OFFSET,
+        layout.max_id_bytes,  # CR.B.2 defense-in-depth bound
     )
     return None if result == -1 else int(result)
 
@@ -255,4 +276,5 @@ def prewarm() -> None:
         SLOT_ID_OFFSET_OFFSET,
         SLOT_FLAGS_OFFSET,
         SLOT_FEATURE_ROW_INDEX_OFFSET,
+        np.int64(64),  # max_id_bytes
     )

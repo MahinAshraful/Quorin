@@ -173,6 +173,13 @@ def _G(  # noqa: N802 — RFC 7693 §3.1 names the mixing function "G"; preserve
     cache=True,
     boundscheck=False,
     fastmath=False,
+    # Inline into ``blake2b_8``'s per-block call site. ``_F`` is the only
+    # significant function-call boundary inside ``blake2b_8``; inlining
+    # saves ~10-20 ns of native call overhead per hash. For short inputs
+    # (n ≤ 128) where ``blake2b_8`` makes a single ``_F`` call, the
+    # savings compound across batch hash calls. Pinned-hash invariant #5
+    # tests verify byte-identical output regardless.
+    inline="always",
 )
 def _F(  # noqa: N802 — RFC 7693 §3.2 names the compression function "F"; preserve the standard name
     h: np.ndarray[Any, np.dtype[np.uint64]],

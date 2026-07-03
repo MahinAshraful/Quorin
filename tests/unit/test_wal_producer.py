@@ -431,3 +431,61 @@ def test_write_sync_returns_when_setter_runs_on_background_thread() -> None:
     msg_id = p.write_sync(_S, "x", {"a": 0.0, "b": 0, "emb": [0.0] * 4}, timeout_ms=200)
     t.join(timeout=1.0)
     assert target_msg_ids == [msg_id]
+
+
+# ---------------------------------------------------------------------------
+# CR.C.3 (v0.1.2) — producer-side entity_id length cap.
+# ---------------------------------------------------------------------------
+
+
+def test_write_rejects_oversize_entity_id_before_xadd() -> None:
+    """CR.C.3: entity_id over MAX_ENTITY_ID_BYTES raises ValueError BEFORE XADD.
+
+    The audit's concern was that an oversize ID lands in the Redis stream
+    + msgpack + consumer memory before failing. The producer-side check
+    must fire BEFORE any side effect.
+    """
+    from quorin.wal import MAX_ENTITY_ID_BYTES
+
+    fake = FakeRedis()
+    p = WALProducer(fake)  # type: ignore[arg-type]
+
+    # Build an entity_id one byte over the cap. ASCII so 1 char = 1 byte.
+    bad_id = "x" * (MAX_ENTITY_ID_BYTES + 1)
+    with pytest.raises(ValueError, match="MAX_ENTITY_ID_BYTES"):
+        p.write(_S, bad_id, {"a": 0.0, "b": 0, "emb": [0.0] * 4})
+
+    # No xadd should have run.
+    assert fake.calls == [], "producer must reject BEFORE xadd"
+
+
+def test_write_accepts_entity_id_at_cap() -> None:
+    """Just-below-cap stays accepted — the cap is not too tight."""
+    from quorin.wal import MAX_ENTITY_ID_BYTES
+
+    fake = FakeRedis()
+    p = WALProducer(fake)  # type: ignore[arg-type]
+
+    ok_id = "x" * MAX_ENTITY_ID_BYTES
+    msg_id = p.write(_S, ok_id, {"a": 0.0, "b": 0, "emb": [0.0] * 4})
+    assert msg_id == b"1-0"
+    assert len(fake.calls) == 1
+
+
+def test_write_counts_utf8_bytes_not_codepoints() -> None:
+    """CR.C.3: the cap is in UTF-8 bytes, not codepoints.
+
+    A 100-codepoint string of 3-byte UTF-8 chars is 300 bytes > the 256
+    cap and must be rejected — even though len(s) = 100 < 256.
+    """
+    from quorin.wal import MAX_ENTITY_ID_BYTES
+
+    fake = FakeRedis()
+    p = WALProducer(fake)  # type: ignore[arg-type]
+
+    # "あ" is 3 bytes UTF-8. 100 of them = 300 bytes, over the 256 cap but
+    # under by codepoint count.
+    bad_id = "あ" * 100
+    assert len(bad_id.encode("utf-8")) > MAX_ENTITY_ID_BYTES
+    with pytest.raises(ValueError, match="MAX_ENTITY_ID_BYTES"):
+        p.write(_S, bad_id, {"a": 0.0, "b": 0, "emb": [0.0] * 4})

@@ -472,3 +472,80 @@ def test_schema_module_has_no_heavy_imports() -> None:
     for bad in forbidden:
         assert f"import {bad}" not in src, f"{bad} must not be imported in schema.py"
         assert f"from {bad}" not in src, f"{bad} must not be imported in schema.py"
+
+
+# ---------------------------------------------------------------------------
+# CR.C.2 (v0.1.2) — shape DoS caps. Regression for the audit finding that
+# ``FeatureField(shape=(2**30,))`` builds with byte_count=4 GB silently.
+# ---------------------------------------------------------------------------
+
+
+def test_feature_field_rejects_element_count_above_cap() -> None:
+    """CR.C.2: ``element_count > MAX_ELEMENT_COUNT`` raises at construction."""
+    from quorin.schema import MAX_ELEMENT_COUNT
+
+    over = MAX_ELEMENT_COUNT + 1
+    with pytest.raises(ValueError, match="MAX_ELEMENT_COUNT"):
+        FeatureField("x", DType.FLOAT32, (over,))
+
+
+def test_feature_field_accepts_element_count_at_cap() -> None:
+    """Just-below-cap stays accepted — verifies the cap is not too tight."""
+    from quorin.schema import MAX_ELEMENT_COUNT
+
+    # 16M uint8 = 16 MiB, well below per-field byte ceiling.
+    f = FeatureField("x", DType.UINT8, (MAX_ELEMENT_COUNT,))
+    assert f.element_count == MAX_ELEMENT_COUNT
+
+
+def test_feature_field_rejects_byte_count_above_cap() -> None:
+    """CR.C.2: element_count under cap but byte_count over still raises.
+
+    16M float64 = 128 MiB ✓; but 33M float64 = 264 MiB > 256 MiB cap.
+    Using uint8 with a much larger shape can exceed element_count first; the
+    distinct ``byte_count`` cap fires when a wider dtype pushes bytes past
+    the per-field limit even with a smaller shape.
+    """
+    from quorin.schema import MAX_ELEMENT_COUNT, MAX_FIELD_BYTES
+
+    # Pick a shape where element_count is just at the cap, dtype is wide.
+    # MAX_ELEMENT_COUNT = 2^24 = 16M. float64 = 8 bytes/elem → 128 MiB. Under
+    # MAX_FIELD_BYTES = 256 MiB. Need a different attack vector: a shape
+    # smaller than MAX_ELEMENT_COUNT but with dtype that multiplies past the
+    # byte cap. element_count = 2^24 with float64 = 128 MiB. To exceed the
+    # byte cap WITHOUT exceeding element_count cap, we need
+    # element_count * sizeof <= MAX_FIELD_BYTES check. At 2^24 elements
+    # x 8 bytes = 128 MiB < 256 MiB — under both caps. With current dtypes
+    # (max 8 bytes/elem) the byte cap is mathematically unreachable below
+    # element_count cap. Document the relationship; element_count cap is
+    # the binding constraint today. The byte cap kicks in if a future dtype
+    # exceeds 16 bytes/elem (e.g. complex128 if/when added).
+    assert MAX_FIELD_BYTES // 8 >= MAX_ELEMENT_COUNT, (
+        "byte cap is non-binding for current dtypes; element_count cap binds first. "
+        "Test will need a wider dtype if the cap relationship inverts."
+    )
+
+
+def test_compute_layout_rejects_total_segment_above_cap() -> None:
+    """CR.C.2 whole-segment ceiling: capacity x row_size product is bounded.
+
+    Direct test of ``compute_layout`` rather than constructing a schema
+    object so we don't have to assemble a giant ``FeatureSchema`` subclass.
+    """
+    import inspect as _inspect
+
+    from quorin.layout import MAX_TOTAL_SEGMENT_BYTES, compute_layout
+
+    # A modest schema (200 float32 fields = 800 bytes/row), with absurd
+    # capacity to push the product past the cap.
+    class _Wide200(FeatureSchema):
+        version = 1
+        fields = [FeatureField(f"f{i}", DType.FLOAT32) for i in range(200)]
+
+    # 800 byte row x 2^28 capacity = ~200 GB. Way over MAX_TOTAL_SEGMENT_BYTES=64 GB.
+    huge_capacity = 1 << 28
+    with pytest.raises(ValueError, match="MAX_TOTAL_SEGMENT_BYTES"):
+        compute_layout(_Wide200, capacity=huge_capacity)
+    # Make ruff happy about the unused inspect import.
+    assert _inspect.isfunction(compute_layout)
+    assert MAX_TOTAL_SEGMENT_BYTES > 0

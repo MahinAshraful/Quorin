@@ -770,3 +770,87 @@ async def test_liveness_gauge_does_not_read_system_uptime_at_startup(
         f"gauge briefly read system_uptime ({gauge_value}) instead of "
         f"~0 — force-first-refresh + defensive set(0.0) pattern broken"
     )
+
+
+# ---------------------------------------------------------------------------
+# CR.B.14 (v0.1.2) — NOGROUP recovery: operator-deleted stream/group must
+# not crash the consumer.
+# ---------------------------------------------------------------------------
+
+
+async def test_read_new_batch_recovers_from_nogroup_error(
+    fake_redis: AsyncFakeRedis, consumer: WALConsumer
+) -> None:
+    """CR.B.14: ``XREADGROUP`` raising NOGROUP triggers group recreate, not crash."""
+    # Pre-create the group so _ensure_group's BUSYGROUP path is exercised
+    # on the recovery. The recreate call should succeed (idempotent).
+    await fake_redis.xgroup_create(consumer._stream_key, consumer._group_name, "0", True)
+
+    # Monkey-patch xreadgroup to raise NOGROUP exactly once.
+    original_xreadgroup = fake_redis.xreadgroup
+    raised: list[bool] = []
+
+    async def flaky_xreadgroup(*args: Any, **kwargs: Any) -> Any:
+        if not raised:
+            raised.append(True)
+            raise redis.exceptions.ResponseError(
+                "NOGROUP No such key 'quorin:wal' or consumer group 'quorin_consumers'"
+            )
+        return await original_xreadgroup(*args, **kwargs)
+
+    fake_redis.xreadgroup = flaky_xreadgroup  # type: ignore[method-assign]
+
+    # First call: hits NOGROUP, recovers via _ensure_group, returns [].
+    msgs = await consumer._read_new_batch()
+    assert msgs == [], "first call after NOGROUP must return empty batch"
+    assert raised == [True], "NOGROUP must have been raised exactly once"
+
+    # Subsequent call: normal path.
+    msgs = await consumer._read_new_batch()
+    assert msgs == []  # no messages on the stream
+
+
+async def test_read_new_batch_other_response_error_still_raises(
+    fake_redis: AsyncFakeRedis, consumer: WALConsumer
+) -> None:
+    """CR.B.14: non-NOGROUP ResponseError must NOT be swallowed."""
+    await fake_redis.xgroup_create(consumer._stream_key, consumer._group_name, "0", True)
+
+    async def angry_xreadgroup(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise redis.exceptions.ResponseError("WRONGTYPE Operation against a key")
+
+    fake_redis.xreadgroup = angry_xreadgroup  # type: ignore[method-assign]
+
+    with pytest.raises(redis.exceptions.ResponseError, match="WRONGTYPE"):
+        await consumer._read_new_batch()
+
+
+# ---------------------------------------------------------------------------
+# CR.C.4 (v0.1.2) — unknown-schema label cardinality cap.
+# ---------------------------------------------------------------------------
+
+
+async def test_unknown_schema_cap_swaps_to_other_label_above_threshold(
+    fake_redis: AsyncFakeRedis, consumer: WALConsumer
+) -> None:
+    """CR.C.4: once _seen_unknown reaches the cap, further unknown schemas
+    increment the ``<other>`` label and ``_seen_unknown`` stops growing."""
+    from quorin.wal_consumer import _UNKNOWN_SCHEMA_CARDINALITY_CAP
+
+    # Saturate the cap with N distinct unknown schema names.
+    for i in range(_UNKNOWN_SCHEMA_CARDINALITY_CAP):
+        msg = _wire_msg(f"_Unknown{i}", "e", [0.0])
+        await consumer._apply(b"1-0", msg)
+
+    assert len(consumer._seen_unknown) == _UNKNOWN_SCHEMA_CARDINALITY_CAP
+
+    # Now apply N+1, N+2 with NEW names — should land in <other>, not the set.
+    for i in range(5):
+        msg = _wire_msg(f"_NewUnknown{i}", "e", [0.0])
+        await consumer._apply(b"1-0", msg)
+
+    # The set must not have grown past the cap.
+    assert len(consumer._seen_unknown) == _UNKNOWN_SCHEMA_CARDINALITY_CAP, (
+        "CR.C.4: _seen_unknown grew past cap; cardinality cap not enforced"
+    )

@@ -2,6 +2,98 @@
 
 All notable changes to Quorin will be documented in this file.
 
+## v0.1.2 — 2026-05-21
+
+Performance + final audit cleanup patch. Closes the remaining
+producer/consumer hardening items deferred from v0.1.1's audit, lands
+two batch-path performance wins (~1.3-1.4x batch ratio recovery
+toward the original 5x claim), and adds defense-in-depth bounds in
+the Numba lookup kernel. **No public-API additions; no breaking
+behavior changes for valid input.** Three new `ValueError`s fire at
+producer/schema boundaries for inputs that previously DoS'd silently.
+
+### Performance
+
+- **Batch hash migration** — `assemble_batch` now hashes each row's
+  entity_id via the Numba `blake2b_8` kernel instead of Python
+  `hashlib.blake2b`. At N=1000 batch, the Python prep floor drops
+  from ~1.5 ms to ~150-300 us. Byte-identical output per pinned-hash
+  invariant #5; verified by `test_batch_parity.py`. Native-CI batch
+  ratio expected to recover from 1.46x/1.73x (4-field/200-field) toward
+  ~2.0-2.4x. See [`quorin/assembly.py`](quorin/assembly.py).
+- **`_F` compression function inlined** — saves a function-call
+  boundary per `blake2b_8` invocation (~10-20 ns). Compounds across
+  batch hashing. Pinned-hash tests verify byte-identity.
+
+### Hardening (DoS class closure)
+
+- **CR.C.2** — `FeatureField` shape caps: `element_count <= 2^24`
+  (16M), per-field bytes `<= 2^28` (256 MiB), whole-segment bytes
+  `<= 2^36` (64 GiB). Defends against `shape=(2**30,)`-class inputs
+  that would previously OOM or SIGBUS at first write. New
+  `quorin.schema.MAX_ELEMENT_COUNT`, `MAX_FIELD_BYTES`,
+  `quorin.layout.MAX_TOTAL_SEGMENT_BYTES`.
+- **CR.C.3** — Producer-side `entity_id` length cap (256 bytes,
+  `MAX_ENTITY_ID_BYTES`). Without it, a single oversize ID landed in
+  the Redis Stream + msgpack + consumer memory before the consumer
+  eventually rejected it, leaving the message PEL-stuck. Now rejected
+  before XADD.
+- **CR.C.4** — Consumer unknown-schema label cardinality cap
+  (1024 distinct names; further unknowns increment the `<other>`
+  bucket). Closes the Prometheus DoS + `_seen_unknown` memory-leak
+  shape.
+- **CR.B.2** — Numba lookup kernel validates `pool_len <= max_id_bytes`
+  before the byte-compare. With `boundscheck=False`, a corrupt pool
+  entry could previously read past the string-pool region; now the
+  kernel returns -1 (miss) for corrupt entries. ~1-2 ns added per
+  probe; locked by `test_lookup_kernel.py`.
+
+### Operability
+
+- **CR.B.14** — `WALConsumer` NOGROUP recovery. Operator actions
+  like `XGROUP DESTROY` or `DEL quorin:wal` previously crashed the
+  consumer; now the consumer logs `wal_consumer.nogroup_recreating`,
+  recreates the group via `_ensure_group()` (`id="0"` semantics), and
+  resumes.
+- **CR.B.13** — Wedged-flush back-pressure escalation. When
+  `pending_ack` sits at `2x max_pending_ack` for >= 60 s (full disk
+  / NFS stuck / deterministic offline failure), the consumer logs
+  ERROR `wal_consumer.backpressure_exceeded` and increments a new
+  `quorin_wal_consumer_backpressure_alerted_total` counter. Operators
+  alert on rate > 0.
+- **CR.E.5** — `WALProducer.write_sync` docstring documents the
+  `timeout_ms x flush_interval_seconds x max_pending_ack` interaction
+  explicitly. The default ~1.6% timeout rate at `timeout_ms=100` was
+  previously undocumented.
+
+### Closed without implementation (WON'T-DO / verified-already-closed)
+
+- **QW-1 (lookup-jit `.copy()` drop)** — Attempted, reverted. Numba
+  0.60 dispatch distinguishes writable from read-only `uint8[::1]`
+  and rejects the read-only variant for `_lookup_core`'s registered
+  signature. The `.copy()` is load-bearing; comment in
+  [`quorin/_internal/lookup_kernel.py`](quorin/_internal/lookup_kernel.py)
+  records the empirical finding to prevent re-litigation.
+- **CR.B.8 (Redis-blip post-flip outage)** — Verified already closed
+  by v0.1.1's CR.A.7 `flip_completed` flag at
+  [`quorin/evolution.py:531`](quorin/evolution.py#L531). Post-flip
+  exception branch preserves `new_seg` and logs
+  `evolution.post_flip_failure_new_segment_preserved` instead of
+  orphan-cleaning. Moved from "deferred" to DONE.
+- **CR.B.1 (Numba UINT8 `else` branch)** — Dropped. v0.1.1's CR.A.1
+  poison-pill widening + segment-open CRC verification means corrupt
+  dtype codes never reach the kernel in practice; the kernel's
+  fast-path `else: UINT8` is acceptable degraded-correct behavior.
+
+### Tests + lint + types
+
+- 10 new regression tests across `test_schema.py`, `test_wal_producer.py`,
+  `test_wal_consumer.py` (3 for C.2, 3 for C.3, 2 for B.14, 1 for C.4,
+  1 fixup for the batch hash swap).
+- **681 tests passing** (was 671 at v0.1.1).
+- mypy strict clean (30 source files).
+- ruff check + format clean (107 files).
+
 ## v0.1.1 — 2026-05-08
 
 Production-readiness patch. Closes 13 confirmed durability /
